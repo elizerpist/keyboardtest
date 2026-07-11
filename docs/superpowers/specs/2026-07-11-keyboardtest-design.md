@@ -16,6 +16,8 @@ The debug log follows the `exptv2` pattern: a small floating terminal button on 
 
 The jank diagnostics pass adds low-overhead instrumentation around the keyboard motion path. Motion logs include sample sequence, milliseconds since the previous inset sample, raw inset delta, velocity, dropped-frame-like markers, and build counters for the motion layer, sheet, and pill. A frame timing probe logs build/raster/total milliseconds and 16 ms / 33 ms budget flags when Flutter provides frame timings. Debug console notifications are batched to post-frame updates, following the `exptv2` notifier pattern, so log writes do not synchronously rebuild the dialog for every keyboard sample.
 
+The consistency pass keeps the same shared sheet+pill transform but bounds raw IME sample jitter with a very short visual catch-up. The debug log distinguishes target keyboard lift from visual lift using `targetLift`, `visualLift`, `lagPx`, and `source`. Frame timing diagnostics are rate-limited and aggregate suppressed rows so opening the copyable debug dialog does not create its own frame-timing feedback loop.
+
 For a production sheet full of functional content, the main risk is rebuilding or relayouting heavy content on every keyboard inset sample. This test app keeps the shared transform approach and wraps the moving layer, sheet, and pill in repaint boundaries so the debug log can show whether the sheet subtree is rebuilding every sample (`sheetBuild`) or whether the remaining jank is more likely in raster/compositing or Android IME inset delivery.
 
 ## Scope
@@ -32,6 +34,7 @@ Included:
 - Prevent the keyboard-hide dock from falling below the safe area.
 - Add an `exptv2`-style floating debug button and copyable debug dialog for keyboard motion inspection.
 - Add jank diagnostics for motion timing, frame timing, build counters, focus changes, and repaint boundary isolation.
+- Rate-limit debug frame timing logs and add visual lift diagnostics for target-vs-rendered keyboard motion.
 
 Excluded:
 - Native Android IME animation code.

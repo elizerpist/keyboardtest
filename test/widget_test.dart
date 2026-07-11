@@ -83,6 +83,7 @@ void main() {
 
       tester.view.viewInsets = const FakeViewPadding(bottom: 260);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 24));
 
       final keyboardSheetTop = tester
           .getRect(find.byKey(const ValueKey('keyboardtest-slide-sheet')))
@@ -124,6 +125,7 @@ void main() {
     await tester.pump();
     tester.view.viewInsets = FakeViewPadding.zero;
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 24));
 
     final screenHeight = tester.view.physicalSize.height;
     final pillRect = tester.getRect(
@@ -171,6 +173,7 @@ void main() {
 
     tester.view.viewInsets = const FakeViewPadding(bottom: 260);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 24));
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('keyboardtest-pill-field')));
@@ -194,6 +197,10 @@ void main() {
     expect(copiedText, contains('lift=236.0'));
     expect(copiedText, contains('sheet=-236.0'));
     expect(copiedText, contains('pill=272.0'));
+    expect(copiedText, contains('targetLift=236.0'));
+    expect(copiedText, contains('visualLift=236.0'));
+    expect(copiedText, contains('lagPx=0.0'));
+    expect(copiedText, contains('source='));
     expect(copiedText, contains('seq='));
     expect(copiedText, contains('dtMs='));
     expect(copiedText, contains('rawDelta='));
@@ -201,10 +208,41 @@ void main() {
     expect(copiedText, contains('droppedLike='));
     expect(copiedText, contains('builds motion='));
     expect(copiedText, contains('frameProbe buildMs='));
+    expect(copiedText, contains('rateLimitMs=250'));
+    expect(copiedText, contains('suppressed='));
+    expect(copiedText, contains('worstTotalMs='));
     expect(copiedText, contains('rasterMs='));
     expect(copiedText, contains('totalMs='));
     expect(copiedText, contains('over16ms='));
     expect(copiedText, contains('over33ms='));
     expect(copiedText, contains('focus active=true'));
+  });
+
+  testWidgets('debug notifier does not request frames by itself', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const KeyboardTestApp());
+    await tester.pumpAndSettle();
+    DebugConsole.clear();
+    await tester.pump();
+
+    var notifications = 0;
+    void listener() => notifications += 1;
+
+    DebugConsole.notifier.addListener(listener);
+    addTearDown(() {
+      DebugConsole.notifier.removeListener(listener);
+      DebugConsole.clear();
+    });
+
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    DebugConsole.log('notify probe');
+
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    await tester.pump();
+    await tester.pump();
+    expect(notifications, 1);
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -105,7 +106,9 @@ class KeyboardMotionMetrics {
     required this.rawInset,
     required this.safeBottom,
     required this.spacing,
-  });
+    double? visualLift,
+    this.source = 'imeDirect',
+  }) : _visualLift = visualLift;
 
   factory KeyboardMotionMetrics.fromContext(BuildContext context) {
     return KeyboardMotionMetrics(
@@ -118,19 +121,38 @@ class KeyboardMotionMetrics {
   final double rawInset;
   final double safeBottom;
   final double spacing;
+  final double? _visualLift;
+  final String source;
 
   double get layerPillBottom => safeBottom + spacing;
-  double get keyboardLift => math.max(rawInset - safeBottom, 0);
-  double get dockBottom => layerPillBottom + keyboardLift;
-  double get sheetTranslation => -keyboardLift;
+  double get targetLift => math.max(rawInset - safeBottom, 0);
+  double get visualLift => _visualLift ?? targetLift;
+  double get keyboardLift => targetLift;
+  double get dockBottom => layerPillBottom + visualLift;
+  double get sheetTranslation => -visualLift;
+  double get lagPx => targetLift - visualLift;
+
+  KeyboardMotionMetrics withVisualLift(double lift, {required String source}) {
+    return KeyboardMotionMetrics(
+      rawInset: rawInset,
+      safeBottom: safeBottom,
+      spacing: spacing,
+      visualLift: lift,
+      source: source,
+    );
+  }
 
   String toDebugLine() {
     return 'raw=${rawInset.toStringAsFixed(1)} '
         'safe=${safeBottom.toStringAsFixed(1)} '
         'dock=${dockBottom.toStringAsFixed(1)} '
-        'lift=${keyboardLift.toStringAsFixed(1)} '
+        'lift=${visualLift.toStringAsFixed(1)} '
         'sheet=${sheetTranslation.toStringAsFixed(1)} '
-        'pill=${dockBottom.toStringAsFixed(1)}';
+        'pill=${dockBottom.toStringAsFixed(1)} '
+        'targetLift=${targetLift.toStringAsFixed(1)} '
+        'visualLift=${visualLift.toStringAsFixed(1)} '
+        'lagPx=${lagPx.toStringAsFixed(1)} '
+        'source=$source';
   }
 }
 
@@ -175,13 +197,20 @@ class DebugBuildStats {
 class DebugPerformanceProbe {
   DebugPerformanceProbe._();
 
+  static const frameLogRateLimit = Duration(milliseconds: 250);
   static var _started = false;
   static var _headerLogged = false;
   static var _frameSeq = 0;
+  static DateTime? _lastFrameLogAt;
+  static var _suppressedFrames = 0;
+  static var _worstSuppressedTotalMs = 0.0;
 
   static void resetSession() {
     _headerLogged = false;
     _frameSeq = 0;
+    _lastFrameLogAt = null;
+    _suppressedFrames = 0;
+    _worstSuppressedTotalMs = 0;
   }
 
   static void ensureStarted() {
@@ -193,7 +222,9 @@ class DebugPerformanceProbe {
     _headerLogged = true;
     DebugConsole.log(
       'frameProbe buildMs=0.0 rasterMs=0.0 totalMs=0.0 '
-      'over16ms=false over33ms=false',
+      'over16ms=false over33ms=false '
+      'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
+      'suppressed=0 worstTotalMs=0.0 source=flutterFrame',
     );
   }
 
@@ -205,15 +236,35 @@ class DebugPerformanceProbe {
       final totalMs = buildMs + rasterMs;
       final over16ms = totalMs > 16.7;
       final over33ms = totalMs > 33.3;
-      if (_frameSeq <= 5 || over16ms) {
-        DebugConsole.log(
-          'frame seq=$_frameSeq '
-          'buildMs=${buildMs.toStringAsFixed(1)} '
-          'rasterMs=${rasterMs.toStringAsFixed(1)} '
-          'totalMs=${totalMs.toStringAsFixed(1)} '
-          'over16ms=$over16ms over33ms=$over33ms',
-        );
+      final shouldLog = _frameSeq <= 5 || over16ms;
+      if (!shouldLog) continue;
+
+      final now = DateTime.now();
+      final isWarmupFrame = _frameSeq <= 5;
+      final withinRateLimit =
+          _lastFrameLogAt != null &&
+          now.difference(_lastFrameLogAt!) < frameLogRateLimit;
+      if (!isWarmupFrame && withinRateLimit) {
+        _suppressedFrames += 1;
+        _worstSuppressedTotalMs = math.max(_worstSuppressedTotalMs, totalMs);
+        continue;
       }
+
+      final worstTotalMs = math.max(totalMs, _worstSuppressedTotalMs);
+      DebugConsole.log(
+        'frame seq=$_frameSeq '
+        'buildMs=${buildMs.toStringAsFixed(1)} '
+        'rasterMs=${rasterMs.toStringAsFixed(1)} '
+        'totalMs=${totalMs.toStringAsFixed(1)} '
+        'over16ms=$over16ms over33ms=$over33ms '
+        'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
+        'suppressed=$_suppressedFrames '
+        'worstTotalMs=${worstTotalMs.toStringAsFixed(1)} '
+        'source=${DebugConsole.hasExternalListeners ? 'debugConsole' : 'flutterFrame'}',
+      );
+      _lastFrameLogAt = now;
+      _suppressedFrames = 0;
+      _worstSuppressedTotalMs = 0;
     }
   }
 
@@ -286,16 +337,22 @@ class DebugConsole {
   static List<String> get entries => List.unmodifiable(_entries);
   static String get allText => _entries.join('\n');
   static ValueNotifier<int> get notifier => _notifier;
+  static bool get hasExternalListeners => _notifier.hasExternalListeners;
 
   static void _scheduleNotify() {
     if (!_notifier.hasExternalListeners) return;
     if (_notifyScheduled) return;
     _notifyScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _notifyScheduled = false;
-      _notifier.value += 1;
-    });
-    WidgetsBinding.instance.scheduleFrame();
+    if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      scheduleMicrotask(_flushNotify);
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _flushNotify());
+  }
+
+  static void _flushNotify() {
+    _notifyScheduled = false;
+    _notifier.value += 1;
   }
 
   static String _primaryFocusLabel() {
@@ -307,20 +364,45 @@ class DebugConsole {
   }
 }
 
-class KeyboardMotionLayer extends StatelessWidget {
+class KeyboardMotionLayer extends StatefulWidget {
   const KeyboardMotionLayer({super.key});
+
+  @override
+  State<KeyboardMotionLayer> createState() => _KeyboardMotionLayerState();
+}
+
+class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
+  static const _catchupDuration = Duration(milliseconds: 18);
+
+  double _lastVisualLift = 0;
 
   @override
   Widget build(BuildContext context) {
     DebugBuildStats.motionBuild += 1;
-    final metrics = KeyboardMotionMetrics.fromContext(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      DebugConsole.logMotion(metrics);
-    });
+    final targetMetrics = KeyboardMotionMetrics.fromContext(context);
+    final targetLift = targetMetrics.targetLift;
+    final needsCatchup = (_lastVisualLift - targetLift).abs() > 0.1;
     return Positioned.fill(
-      child: Transform.translate(
-        key: const ValueKey('keyboardtest-keyboard-motion-transform'),
-        offset: Offset(0, metrics.sheetTranslation),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: _lastVisualLift, end: targetLift),
+        duration: needsCatchup ? _catchupDuration : Duration.zero,
+        curve: Curves.linear,
+        onEnd: () => _lastVisualLift = targetLift,
+        builder: (context, visualLift, child) {
+          _lastVisualLift = visualLift;
+          final visualMetrics = targetMetrics.withVisualLift(
+            visualLift,
+            source: _motionSource(targetMetrics, visualLift),
+          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            DebugConsole.logMotion(visualMetrics);
+          });
+          return Transform.translate(
+            key: const ValueKey('keyboardtest-keyboard-motion-transform'),
+            offset: Offset(0, visualMetrics.sheetTranslation),
+            child: child,
+          );
+        },
         child: RepaintBoundary(
           key: const ValueKey('keyboardtest-motion-repaint-boundary'),
           child: Stack(
@@ -331,12 +413,19 @@ class KeyboardMotionLayer extends StatelessWidget {
                 bottom: 0,
                 child: SlideUpKeyboardSheet(),
               ),
-              FloatingKeyboardPill(metrics: metrics),
+              FloatingKeyboardPill(metrics: targetMetrics),
             ],
           ),
         ),
       ),
     );
+  }
+
+  String _motionSource(KeyboardMotionMetrics metrics, double visualLift) {
+    if ((metrics.targetLift - visualLift).abs() <= 0.1) {
+      return 'imeSettled';
+    }
+    return 'imeCatchup';
   }
 }
 

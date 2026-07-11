@@ -4,7 +4,7 @@
 
 **Goal:** Build and publish a minimal Flutter keyboard footer test app.
 
-**Architecture:** A fixed slide-up sheet contains a separate floating text pill footer. The footer reads `MediaQuery.viewInsets.bottom` directly, so only the footer follows the keyboard and the sheet body does not jump upward.
+**Architecture:** A shared keyboard motion layer reads `MediaQuery.viewInsets.bottom` and moves both the actual slide-up sheet and the separate floating text pill from one transform. The pill remains its own component, but it is visually synchronized with the sheet and can use a short bounded catch-up to smooth raw IME sample jitter.
 
 **Tech Stack:** Flutter, Dart widget tests, GitHub Actions, Android debug APK.
 
@@ -165,6 +165,30 @@
 - [x] Add build counters for motion layer, sheet, and pill.
 - [x] Add focus change logs for the pill field.
 - [x] Wrap moving layer, sheet, and pill in repaint boundaries.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
+- [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
+
+### Task 8: Consistent Keyboard Motion And Debug Throttling
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+- Modify: `docs/superpowers/specs/2026-07-11-keyboardtest-design.md`
+
+**Interfaces:**
+- `KeyboardMotionLayer` remains the only shared transform owner for the actual `SlideUpKeyboardSheet` and `FloatingKeyboardPill`.
+- `KeyboardMotionMetrics.withVisualLift(double visualLift, {required String source})` produces debug metrics containing `targetLift`, `visualLift`, `lagPx`, and `source`.
+- `DebugPerformanceProbe` logs `rateLimitMs`, `suppressed`, `worstTotalMs`, and `source` so frame timing diagnostics do not flood the console.
+- `DebugConsole._scheduleNotify()` batches listener updates without calling `WidgetsBinding.instance.scheduleFrame()`.
+
+- [x] Write failing widget tests proving copied logs include `targetLift`, `visualLift`, `lagPx`, `source`, `rateLimitMs`, `suppressed`, and `worstTotalMs`.
+- [x] Write/update widget tests proving the sheet and pill still move by the same settled keyboard delta from one shared transform.
+- [x] Run targeted Flutter widget tests through Ubuntu/proot and confirm the new diagnostics test fails before implementation.
+- [x] Remove the explicit `scheduleFrame()` call from debug console notification.
+- [x] Rate-limit frame timing logs and aggregate suppressed frame timing rows.
+- [x] Add visual lift diagnostics and a short shared-transform catch-up for IME sample jitter.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
 - [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
