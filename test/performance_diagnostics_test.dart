@@ -79,6 +79,18 @@ void main() {
     });
   });
 
+  group('FrameDiagnosticRingBuffer', () {
+    test('overwrites its oldest slot while staying bounded', () {
+      final buffer = FrameDiagnosticRingBuffer(capacity: 2);
+      buffer.add(frame(buildMs: 1, rasterMs: 1, totalSpanMs: 1));
+      buffer.add(frame(buildMs: 2, rasterMs: 2, totalSpanMs: 2));
+      buffer.add(frame(buildMs: 3, rasterMs: 3, totalSpanMs: 3));
+
+      expect(buffer.length, 2);
+      expect(buffer.map((sample) => sample.buildMs), [2, 3]);
+    });
+  });
+
   group('diagnostic samples', () {
     test('text, motion, and frame samples format their stored values', () {
       expect(const TextDiagnosticSample('plain text').format(), 'plain text');

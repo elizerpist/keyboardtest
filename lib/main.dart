@@ -430,12 +430,16 @@ final class _FrameConsoleSample implements DiagnosticSample {
     required this.sequence,
     required this.debugOpen,
     required this.warmupFrame,
+    required this.suppressed,
+    required this.worstTotalMs,
   });
 
   final FrameDiagnosticSample sample;
   final int sequence;
   final bool debugOpen;
   final bool warmupFrame;
+  final int suppressed;
+  final double worstTotalMs;
 
   @override
   String format() {
@@ -444,7 +448,8 @@ final class _FrameConsoleSample implements DiagnosticSample {
         'over16ms=${sample.totalSpanMs > 16.7} '
         'over33ms=${sample.totalSpanMs > 33.3} '
         'rateLimitMs=${DebugPerformanceProbe.frameLogRateLimit.inMilliseconds} '
-        'suppressed=0 worstTotalMs=${sample.totalSpanMs.toStringAsFixed(1)} '
+        'suppressed=$suppressed '
+        'worstTotalMs=${worstTotalMs.toStringAsFixed(1)} '
         'source=flutterFrame debugOpen=$debugOpen warmupFrame=$warmupFrame';
   }
 }
@@ -457,7 +462,9 @@ class DebugConsole {
   static final DiagnosticRingBuffer _samples = DiagnosticRingBuffer(
     capacity: _maxEntries,
   );
-  static final List<FrameDiagnosticSample> _frames = <FrameDiagnosticSample>[];
+  static final FrameDiagnosticRingBuffer _frames = FrameDiagnosticRingBuffer(
+    capacity: _maxEntries,
+  );
   static final _DebugConsoleNotifier _notifier = _DebugConsoleNotifier(0);
   static var _notifyScheduled = false;
   static final Stopwatch _clock = Stopwatch()..start();
@@ -466,6 +473,9 @@ class DebugConsole {
   static var _motionSeq = 0;
   static var _entryCount = 0;
   static var _detailedCollectionEnabled = true;
+  static int? _lastVisibleFrameLogUs;
+  static var _suppressedFrameLogs = 0;
+  static var _worstSuppressedTotalMs = 0.0;
 
   static bool get detailedCollectionEnabled => _detailedCollectionEnabled;
   static int get latestMotionSequence => _motionSeq;
@@ -473,7 +483,6 @@ class DebugConsole {
   static void setDetailedCollectionEnabled(bool enabled) {
     if (_detailedCollectionEnabled == enabled) return;
     _detailedCollectionEnabled = enabled;
-    _scheduleNotify();
   }
 
   static void log(String message) {
@@ -486,10 +495,10 @@ class DebugConsole {
     _add(TextDiagnosticSample('[$stamp] $message'));
   }
 
-  static void _add(DiagnosticSample sample) {
+  static void _add(DiagnosticSample sample, {bool notify = true}) {
     _samples.add(sample);
     _entryCount = math.min(_entryCount + 1, _maxEntries);
-    _scheduleNotify();
+    if (notify) _scheduleNotify();
   }
 
   static void logMotion(KeyboardMotionMetrics metrics) {
@@ -551,16 +560,40 @@ class DebugConsole {
     required bool warmupFrame,
   }) {
     if (!_detailedCollectionEnabled) return;
-    if (_frames.length == _maxEntries) _frames.removeAt(0);
     _frames.add(sample);
+    final nowUs = _clock.elapsedMicroseconds;
+    final rateLimitUs = DebugPerformanceProbe.frameLogRateLimit.inMicroseconds;
+    final lastVisibleFrameLogUs = _lastVisibleFrameLogUs;
+    if (lastVisibleFrameLogUs != null &&
+        nowUs - lastVisibleFrameLogUs < rateLimitUs) {
+      _suppressedFrameLogs += 1;
+      _worstSuppressedTotalMs = math.max(
+        _worstSuppressedTotalMs,
+        sample.totalSpanMs,
+      );
+      return;
+    }
+
+    final worstTotalMs = math.max(_worstSuppressedTotalMs, sample.totalSpanMs);
     _add(
       _FrameConsoleSample(
         sample: sample,
         sequence: sequence,
         debugOpen: hasExternalListeners,
         warmupFrame: warmupFrame,
+        suppressed: _suppressedFrameLogs,
+        worstTotalMs: worstTotalMs,
       ),
+      notify: false,
     );
+    _lastVisibleFrameLogUs = nowUs;
+    _suppressedFrameLogs = 0;
+    _worstSuppressedTotalMs = 0;
+  }
+
+  @visibleForTesting
+  static void recordFrameForTesting(FrameDiagnosticSample sample) {
+    _logFrame(sample, sequence: 0, warmupFrame: false);
   }
 
   static void clear() {
@@ -570,6 +603,9 @@ class DebugConsole {
     _entryCount = 0;
     _samples.clear();
     _frames.clear();
+    _lastVisibleFrameLogUs = null;
+    _suppressedFrameLogs = 0;
+    _worstSuppressedTotalMs = 0;
     _clock
       ..reset()
       ..start();
@@ -577,9 +613,7 @@ class DebugConsole {
   }
 
   static List<String> get entries {
-    final text = _samples.formattedText;
-    if (text.isEmpty) return const <String>[];
-    return List<String>.unmodifiable(text.split('\n'));
+    return _samples.formattedEntries;
   }
 
   static int get entryCount => _entryCount;
@@ -961,6 +995,10 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
     });
   }
 
+  void _setDetailedCollectionEnabled(bool enabled) {
+    setState(() => DebugConsole.setDetailedCollectionEnabled(enabled));
+  }
+
   Future<void> _copyAll() async {
     final text = DebugConsole.allText;
     if (text.isEmpty) return;
@@ -1021,7 +1059,7 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
                   Switch(
                     key: const ValueKey('debug-detailed-collection-switch'),
                     value: DebugConsole.detailedCollectionEnabled,
-                    onChanged: DebugConsole.setDetailedCollectionEnabled,
+                    onChanged: _setDetailedCollectionEnabled,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   IconButton(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:keyboardtest/main.dart';
+import 'package:keyboardtest/performance_diagnostics.dart';
 
 void main() {
   testWidgets('home starts with a FAB and no sheet', (tester) async {
@@ -358,6 +359,77 @@ void main() {
       DebugConsole.logMotion(sampleMetrics);
 
       expect(DebugConsole.allText, contains('raw=260.0'));
+    },
+  );
+
+  testWidgets(
+    'collection setter is state-only with the dialog listener attached',
+    (tester) async {
+      DebugConsole.setDetailedCollectionEnabled(true);
+      addTearDown(() => DebugConsole.setDetailedCollectionEnabled(true));
+
+      await tester.pumpWidget(const KeyboardTestApp());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('debug-floating-button')));
+      await tester.pumpAndSettle();
+
+      final notifierValue = DebugConsole.notifier.value;
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      DebugConsole.setDetailedCollectionEnabled(false);
+      await tester.idle();
+
+      expect(DebugConsole.notifier.value, notifierValue);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    },
+  );
+
+  testWidgets('debug entries preserve multiline log boundaries', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const KeyboardTestApp());
+    await tester.pumpAndSettle();
+    DebugConsole.clear();
+    addTearDown(DebugConsole.clear);
+
+    DebugConsole.log('a\nb');
+
+    expect(DebugConsole.entries, hasLength(1));
+    expect(DebugConsole.entries.single, contains('a\nb'));
+  });
+
+  testWidgets(
+    'recording a frame with the dialog open does not notify or schedule frames',
+    (tester) async {
+      DebugConsole.setDetailedCollectionEnabled(true);
+      DebugConsole.clear();
+      addTearDown(DebugConsole.clear);
+
+      await tester.pumpWidget(const KeyboardTestApp());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('debug-floating-button')));
+      await tester.pumpAndSettle();
+
+      final notifierValue = DebugConsole.notifier.value;
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      DebugConsole.recordFrameForTesting(
+        const FrameDiagnosticSample(
+          buildMs: 3,
+          rasterMs: 4,
+          totalSpanMs: 12,
+          vsyncOverheadMs: 1,
+          vsyncDeltaMs: 16.7,
+          refreshRate: 60,
+          budgetMs: 16.7,
+          frameNumber: 42,
+          latestMotionSequence: 0,
+        ),
+      );
+      await tester.idle();
+
+      expect(DebugConsole.notifier.value, notifierValue);
+      expect(tester.binding.hasScheduledFrame, isFalse);
     },
   );
 

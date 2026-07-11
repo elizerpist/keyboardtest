@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 abstract interface class DiagnosticSample {
   String format();
 }
@@ -185,6 +187,53 @@ final class PerformanceSummary {
   }
 }
 
+final class FrameDiagnosticRingBuffer
+    extends IterableBase<FrameDiagnosticSample> {
+  FrameDiagnosticRingBuffer({required this.capacity})
+    : _frames = _createStorage(capacity);
+
+  final int capacity;
+  final List<FrameDiagnosticSample?> _frames;
+  var _start = 0;
+  var _length = 0;
+
+  static List<FrameDiagnosticSample?> _createStorage(int capacity) {
+    if (capacity <= 0) {
+      throw ArgumentError.value(capacity, 'capacity', 'must be positive');
+    }
+    return List<FrameDiagnosticSample?>.filled(capacity, null, growable: false);
+  }
+
+  void add(FrameDiagnosticSample sample) {
+    if (_length < capacity) {
+      _frames[(_start + _length) % capacity] = sample;
+      _length += 1;
+      return;
+    }
+
+    _frames[_start] = sample;
+    _start = (_start + 1) % capacity;
+  }
+
+  void clear() {
+    _frames.fillRange(0, capacity, null);
+    _start = 0;
+    _length = 0;
+  }
+
+  @override
+  int get length => _length;
+
+  @override
+  Iterator<FrameDiagnosticSample> get iterator => _orderedFrames().iterator;
+
+  Iterable<FrameDiagnosticSample> _orderedFrames() sync* {
+    for (var offset = 0; offset < _length; offset += 1) {
+      yield _frames[(_start + offset) % capacity]!;
+    }
+  }
+}
+
 final class DiagnosticRingBuffer {
   DiagnosticRingBuffer({required this.capacity})
     : _samples = _createStorage(capacity);
@@ -219,6 +268,13 @@ final class DiagnosticRingBuffer {
   }
 
   String get formattedText => _formatTail(_length);
+
+  List<String> get formattedEntries => List<String>.unmodifiable(
+    Iterable<String>.generate(
+      _length,
+      (offset) => _samples[(_start + offset) % capacity]!.format(),
+    ),
+  );
 
   String formattedTail(int count) {
     if (count <= 0) return '';
