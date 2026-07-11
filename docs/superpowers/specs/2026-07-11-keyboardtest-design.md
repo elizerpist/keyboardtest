@@ -18,6 +18,8 @@ The jank diagnostics pass adds low-overhead instrumentation around the keyboard 
 
 The consistency pass keeps the same shared sheet+pill transform but bounds raw IME sample jitter with a very short visual catch-up. The debug log distinguishes target keyboard lift from visual lift using `targetLift`, `visualLift`, `lagPx`, and `source`. Frame timing diagnostics are rate-limited and aggregate suppressed rows so opening the copyable debug dialog does not create its own frame-timing feedback loop.
 
+The debug-tail pass preserves the `keyboard-smooth-v1` shared motion behavior and changes only diagnostic presentation. The debug dialog renders a bounded tail of recent lines to reduce its own build cost, while the copy action exports the complete log buffer. Motion logs split idle gaps from active sample gaps, and frame logs keep `source=flutterFrame` with a separate `debugOpen` flag.
+
 For a production sheet full of functional content, the main risk is rebuilding or relayouting heavy content on every keyboard inset sample. This test app keeps the shared transform approach and wraps the moving layer, sheet, and pill in repaint boundaries so the debug log can show whether the sheet subtree is rebuilding every sample (`sheetBuild`) or whether the remaining jank is more likely in raster/compositing or Android IME inset delivery.
 
 ## Scope
@@ -35,6 +37,7 @@ Included:
 - Add an `exptv2`-style floating debug button and copyable debug dialog for keyboard motion inspection.
 - Add jank diagnostics for motion timing, frame timing, build counters, focus changes, and repaint boundary isolation.
 - Rate-limit debug frame timing logs and add visual lift diagnostics for target-vs-rendered keyboard motion.
+- Keep the smooth shared motion milestone intact while reducing debug dialog render cost and clarifying diagnostic labels.
 
 Excluded:
 - Native Android IME animation code.

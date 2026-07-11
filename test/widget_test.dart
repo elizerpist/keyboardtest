@@ -206,11 +206,16 @@ void main() {
     expect(copiedText, contains('rawDelta='));
     expect(copiedText, contains('velocity='));
     expect(copiedText, contains('droppedLike='));
+    expect(copiedText, contains('idleGap='));
+    expect(copiedText, contains('sampleGap='));
+    expect(copiedText, contains('activeMotion='));
+    expect(copiedText, contains('motionPhase='));
     expect(copiedText, contains('builds motion='));
     expect(copiedText, contains('frameProbe buildMs='));
     expect(copiedText, contains('rateLimitMs=250'));
     expect(copiedText, contains('suppressed='));
     expect(copiedText, contains('worstTotalMs='));
+    expect(copiedText, contains('debugOpen='));
     expect(copiedText, contains('rasterMs='));
     expect(copiedText, contains('totalMs='));
     expect(copiedText, contains('over16ms='));
@@ -244,5 +249,49 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(notifications, 1);
+  });
+
+  testWidgets('debug console renders a tail but copies the full log', (
+    tester,
+  ) async {
+    String? copiedText;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (methodCall) async {
+          if (methodCall.method == 'Clipboard.setData') {
+            final arguments = methodCall.arguments as Map<dynamic, dynamic>;
+            copiedText = arguments['text'] as String?;
+          }
+          return null;
+        });
+    addTearDown(() {
+      DebugConsole.clear();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(const KeyboardTestApp());
+    await tester.pumpAndSettle();
+    DebugConsole.clear();
+
+    for (var index = 1; index <= 120; index += 1) {
+      DebugConsole.log('debug-line-${index.toString().padLeft(3, '0')}');
+    }
+
+    await tester.tap(find.byKey(const ValueKey('debug-floating-button')));
+    await tester.pumpAndSettle();
+
+    final textField = tester.widget<TextField>(
+      find.byKey(const ValueKey('debug-console-text')),
+    );
+    final visibleText = textField.controller!.text;
+
+    expect(visibleText, isNot(contains('debug-line-001')));
+    expect(visibleText, contains('debug-line-120'));
+
+    await tester.tap(find.byKey(const ValueKey('debug-console-copy')));
+    await tester.pump();
+
+    expect(copiedText, contains('debug-line-001'));
+    expect(copiedText, contains('debug-line-120'));
   });
 }

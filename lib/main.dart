@@ -224,7 +224,7 @@ class DebugPerformanceProbe {
       'frameProbe buildMs=0.0 rasterMs=0.0 totalMs=0.0 '
       'over16ms=false over33ms=false '
       'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
-      'suppressed=0 worstTotalMs=0.0 source=flutterFrame',
+      'suppressed=0 worstTotalMs=0.0 source=flutterFrame debugOpen=false',
     );
   }
 
@@ -260,7 +260,7 @@ class DebugPerformanceProbe {
         'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
         'suppressed=$_suppressedFrames '
         'worstTotalMs=${worstTotalMs.toStringAsFixed(1)} '
-        'source=${DebugConsole.hasExternalListeners ? 'debugConsole' : 'flutterFrame'}',
+        'source=flutterFrame debugOpen=${DebugConsole.hasExternalListeners}',
       );
       _lastFrameLogAt = now;
       _suppressedFrames = 0;
@@ -277,6 +277,7 @@ class DebugConsole {
   DebugConsole._();
 
   static const _maxEntries = 500;
+  static const _visibleTailLines = 80;
   static final List<String> _entries = <String>[];
   static final _DebugConsoleNotifier _notifier = _DebugConsoleNotifier(0);
   static var _notifyScheduled = false;
@@ -309,7 +310,11 @@ class DebugConsole {
         ? 0.0
         : metrics.rawInset - _lastRawInset!;
     final velocity = dtMs <= 0 ? 0.0 : rawDelta / (dtMs / 1000);
-    final droppedLike = dtMs > 24;
+    final activeMotion = rawDelta.abs() > 0.1 || metrics.lagPx.abs() > 0.1;
+    final idleGap = dtMs > 200;
+    final sampleGap = activeMotion && !idleGap && dtMs > 24;
+    final droppedLike = sampleGap;
+    final motionPhase = _motionPhase(rawDelta, metrics);
     _motionSeq += 1;
     _lastMotionLine = line;
     _lastMotionAt = now;
@@ -320,6 +325,10 @@ class DebugConsole {
       'rawDelta=${rawDelta.toStringAsFixed(1)} '
       'velocity=${velocity.toStringAsFixed(1)} '
       'droppedLike=$droppedLike '
+      'idleGap=$idleGap '
+      'sampleGap=$sampleGap '
+      'activeMotion=$activeMotion '
+      'motionPhase=$motionPhase '
       '${DebugBuildStats.snapshot()} '
       'focus=${_primaryFocusLabel()}',
     );
@@ -336,6 +345,11 @@ class DebugConsole {
 
   static List<String> get entries => List.unmodifiable(_entries);
   static String get allText => _entries.join('\n');
+  static String get visibleTailText {
+    final start = math.max(_entries.length - _visibleTailLines, 0);
+    return _entries.skip(start).join('\n');
+  }
+
   static ValueNotifier<int> get notifier => _notifier;
   static bool get hasExternalListeners => _notifier.hasExternalListeners;
 
@@ -361,6 +375,16 @@ class DebugConsole {
     return primaryFocus.debugLabel ??
         primaryFocus.context?.widget.runtimeType.toString() ??
         'unknown';
+  }
+
+  static String _motionPhase(double rawDelta, KeyboardMotionMetrics metrics) {
+    if (rawDelta > 0.1) return 'opening';
+    if (rawDelta < -0.1) return 'closing';
+    if (metrics.targetLift <= 0.1 && metrics.visualLift <= 0.1) {
+      return 'settled';
+    }
+    if (metrics.lagPx.abs() > 0.1) return 'catchup';
+    return 'settled';
   }
 }
 
@@ -639,7 +663,7 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
   @override
   void initState() {
     super.initState();
-    _controller.text = DebugConsole.allText;
+    _controller.text = DebugConsole.visibleTailText;
     DebugConsole.notifier.addListener(_refresh);
   }
 
@@ -652,7 +676,7 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
 
   void _refresh() {
     if (!mounted) return;
-    final text = DebugConsole.allText;
+    final text = DebugConsole.visibleTailText;
     _controller.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
@@ -661,8 +685,9 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
   }
 
   Future<void> _copyAll() async {
-    if (_controller.text.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: _controller.text));
+    final text = DebugConsole.allText;
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     setState(() => _copied = true);
   }

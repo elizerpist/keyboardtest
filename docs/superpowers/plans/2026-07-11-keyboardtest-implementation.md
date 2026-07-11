@@ -167,7 +167,7 @@
 - [x] Wrap moving layer, sheet, and pill in repaint boundaries.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
-- [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
+- [x] Commit, push, wait for online debug APK build, and download the updated artifact.
 
 ### Task 8: Consistent Keyboard Motion And Debug Throttling
 
@@ -189,6 +189,32 @@
 - [x] Remove the explicit `scheduleFrame()` call from debug console notification.
 - [x] Rate-limit frame timing logs and aggregate suppressed frame timing rows.
 - [x] Add visual lift diagnostics and a short shared-transform catch-up for IME sample jitter.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
+- [x] Commit, push, wait for online debug APK build, and download the updated artifact.
+
+### Task 9: Debug Console Tail View And Clearer Gap Labels
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+- Modify: `docs/superpowers/specs/2026-07-11-keyboardtest-design.md`
+
+**Interfaces:**
+- `DebugConsole.visibleTailText` returns only the recent visible lines used by `DebugConsoleDialog`.
+- `DebugConsole.allText` remains the full copy/export payload.
+- `DebugConsole.logMotion(KeyboardMotionMetrics metrics)` appends `idleGap`, `sampleGap`, `activeMotion`, and `motionPhase`.
+- `DebugPerformanceProbe` logs `source=flutterFrame debugOpen=<bool>` for frame timing rows.
+- `KeyboardMotionLayer` keeps the `18 ms` shared-transform catch-up from `keyboard-smooth-v1`.
+
+- [x] Write failing widget tests proving the dialog text is truncated to recent tail lines but copied text contains full history.
+- [x] Write failing widget tests proving copied diagnostics include `idleGap`, `sampleGap`, `activeMotion`, `motionPhase`, and `debugOpen`.
+- [x] Run targeted Flutter widget tests through Ubuntu/proot and confirm the new tests fail before implementation.
+- [x] Add `DebugConsole.visibleTailText` and update the dialog to render that tail.
+- [x] Change copy behavior to copy `DebugConsole.allText` rather than the visible controller text.
+- [x] Add motion gap labels without changing visual motion math.
+- [x] Change frame timing logs to keep `source=flutterFrame` and add `debugOpen`.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
 - [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
