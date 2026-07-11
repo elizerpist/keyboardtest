@@ -22,6 +22,8 @@ The debug-tail pass preserves the `keyboard-smooth-v1` shared motion behavior an
 
 The sample-gap diagnostics pass keeps the same shared transform and labels active IME sample gaps without adding a second visual motion layer. `bridgeMs=0` means the current mainline no longer adds a separate catch-up animation; `bridgedGap=true` still records that a compact sample gap was detected. Frame warmup rows are marked with `warmupFrame`, and the debug dialog renders its visible tail as lightweight scrollable text instead of an editable text field.
 
+The first-slide warmup pass prewarms Flutter's platform text input path after app startup by attaching and closing a no-keyboard `TextInput` client without calling `show()`. Sheet-open diagnostics report `text input prewarm ready=<bool>` so copied logs show whether the first visible pill focus should avoid the text input initialization cost. This does not request focus, does not show the IME, and does not alter the sheet/pill transform math.
+
 For a production sheet full of functional content, the main risk is rebuilding or relayouting heavy content on every keyboard inset sample. This test app keeps the shared transform approach and wraps the moving layer, sheet, and pill in repaint boundaries so the debug log can show whether the sheet subtree is rebuilding every sample (`sheetBuild`) or whether the remaining jank is more likely in raster/compositing or Android IME inset delivery.
 
 ## Scope
@@ -41,6 +43,7 @@ Included:
 - Rate-limit debug frame timing logs and add visual lift diagnostics for target-vs-rendered keyboard motion.
 - Keep the smooth shared motion milestone intact while reducing debug dialog render cost and clarifying diagnostic labels.
 - Apply active IME samples directly from the existing shared transform and label sample-gap/warmup/debug diagnostics without changing sheet content rebuild behavior.
+- Prewarm the platform text input path before the first visible pill focus to reduce first-slide-only initialization jank.
 
 Excluded:
 - Native Android IME animation code.

@@ -263,4 +263,24 @@
 - [x] Keep sample-gap diagnostics while applying the target lift directly.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
+- [x] Commit, push, wait for online debug APK build, and download the updated artifact.
+
+### Task 12: First Keyboard Slide TextInput Prewarm
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+- Modify: `docs/superpowers/specs/2026-07-11-keyboardtest-design.md`
+
+**Interfaces:**
+- `KeyboardInputWarmup.ensureScheduled()` prewarms Flutter/platform text input after app startup without calling `show()` and without focusing `keyboardtest-pill-field`.
+- Sheet-open diagnostics log `text input prewarm ready=<bool>` so first-slide warmup state is visible in copied logs.
+
+- [x] Write a failing widget test proving sheet-open logs report ready text input prewarm before pill focus.
+- [x] Run the targeted Flutter widget test through Ubuntu/proot and confirm it fails before implementation.
+- [x] Add an idempotent no-keyboard TextInput attach/close warmup.
+- [x] Log warmup readiness during sheet open.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
 - [ ] Commit, push, wait for online debug APK build, and download the updated artifact.

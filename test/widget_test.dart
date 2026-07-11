@@ -157,6 +157,21 @@ void main() {
     await expectImmediateLift(rawInset: 48, expectedLift: 24);
   });
 
+  testWidgets('text input is prewarmed before first pill focus', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const KeyboardTestApp());
+    await tester.pump();
+    DebugConsole.clear();
+
+    await tester.tap(find.byKey(const ValueKey('keyboardtest-open-sheet-fab')));
+    await tester.pumpAndSettle();
+
+    final logText = DebugConsole.allText;
+    expect(logText, contains('text input prewarm ready=true'));
+    expect(logText, isNot(contains('focus active=true')));
+  });
+
   testWidgets('pill returns directly to safe-area dock without bottom bounce', (
     tester,
   ) async {

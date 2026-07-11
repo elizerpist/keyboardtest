@@ -26,6 +26,68 @@ class KeyboardTestApp extends StatelessWidget {
   }
 }
 
+class KeyboardInputWarmup {
+  KeyboardInputWarmup._();
+
+  static final _client = _KeyboardWarmupTextInputClient();
+  static var _scheduled = false;
+  static var _ready = false;
+
+  static bool get isReady => _ready;
+
+  static void ensureScheduled() {
+    if (_scheduled) return;
+    _scheduled = true;
+    TextInput.ensureInitialized();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _warm());
+  }
+
+  static void _warm() {
+    if (_ready) return;
+    final connection = TextInput.attach(
+      _client,
+      const TextInputConfiguration(
+        inputType: TextInputType.none,
+        inputAction: TextInputAction.none,
+        autocorrect: false,
+        enableSuggestions: false,
+        enableIMEPersonalizedLearning: false,
+      ),
+    );
+    connection.setEditingState(TextEditingValue.empty);
+    connection.close();
+    _ready = true;
+  }
+}
+
+class _KeyboardWarmupTextInputClient with TextInputClient {
+  const _KeyboardWarmupTextInputClient();
+
+  @override
+  TextEditingValue? get currentTextEditingValue => TextEditingValue.empty;
+
+  @override
+  AutofillScope? get currentAutofillScope => null;
+
+  @override
+  void updateEditingValue(TextEditingValue value) {}
+
+  @override
+  void performAction(TextInputAction action) {}
+
+  @override
+  void performPrivateCommand(String action, Map<String, dynamic> data) {}
+
+  @override
+  void updateFloatingCursor(RawFloatingCursorPoint point) {}
+
+  @override
+  void showAutocorrectionPromptRect(int start, int end) {}
+
+  @override
+  void connectionClosed() {}
+}
+
 class KeyboardTestHome extends StatefulWidget {
   const KeyboardTestHome({super.key});
 
@@ -36,13 +98,21 @@ class KeyboardTestHome extends StatefulWidget {
 class _KeyboardTestHomeState extends State<KeyboardTestHome> {
   var _sheetOpen = false;
 
+  @override
+  void initState() {
+    super.initState();
+    KeyboardInputWarmup.ensureScheduled();
+  }
+
   void _openSheet() {
     FocusManager.instance.primaryFocus?.unfocus();
+    KeyboardInputWarmup.ensureScheduled();
     DebugBuildStats.reset();
     DebugPerformanceProbe.resetSession();
     DebugConsole.clear();
     DebugPerformanceProbe.ensureStarted();
     DebugConsole.log('sheet open');
+    DebugConsole.log('text input prewarm ready=${KeyboardInputWarmup.isReady}');
     setState(() => _sheetOpen = true);
   }
 
