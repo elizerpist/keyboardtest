@@ -292,6 +292,9 @@ void main() {
     expect(copiedText, contains('over16ms='));
     expect(copiedText, contains('over33ms='));
     expect(copiedText, contains('focus active=true'));
+    expect(copiedText, contains('PerformanceSummary'));
+    expect(copiedText, contains('frameCount='));
+    expect(copiedText, contains('p95BuildMs='));
   });
 
   testWidgets('debug notifier does not request frames by itself', (
@@ -320,6 +323,76 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(notifications, 1);
+  });
+
+  testWidgets(
+    'detailed collection gates motion and toggling schedules no frame',
+    (tester) async {
+      await tester.pumpWidget(const KeyboardTestApp());
+      await tester.pumpAndSettle();
+      DebugConsole.clear();
+      DebugConsole.setDetailedCollectionEnabled(false);
+      addTearDown(() {
+        DebugConsole.setDetailedCollectionEnabled(true);
+        DebugConsole.clear();
+      });
+
+      const sampleMetrics = KeyboardMotionMetrics(
+        rawInset: 260,
+        safeBottom: 24,
+        spacing: 12,
+      );
+
+      DebugConsole.log('ordinary text');
+      DebugConsole.logMotion(sampleMetrics);
+
+      expect(DebugConsole.allText, contains('ordinary text'));
+      expect(DebugConsole.allText, isNot(contains('raw=260.0')));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      DebugConsole.setDetailedCollectionEnabled(true);
+
+      expect(DebugConsole.detailedCollectionEnabled, isTrue);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      DebugConsole.logMotion(sampleMetrics);
+
+      expect(DebugConsole.allText, contains('raw=260.0'));
+    },
+  );
+
+  testWidgets('debug dialog exposes a focus-neutral collection switch', (
+    tester,
+  ) async {
+    DebugConsole.setDetailedCollectionEnabled(false);
+    addTearDown(() => DebugConsole.setDetailedCollectionEnabled(true));
+
+    await tester.pumpWidget(const KeyboardTestApp());
+    await tester.tap(find.byKey(const ValueKey('keyboardtest-open-sheet-fab')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('debug-floating-button')));
+    await tester.pumpAndSettle();
+
+    final switchFinder = find.byKey(
+      const ValueKey('debug-detailed-collection-switch'),
+    );
+    expect(switchFinder, findsOneWidget);
+    expect(tester.widget<Switch>(switchFinder).value, isFalse);
+
+    final focusBeforeToggle = FocusManager.instance.primaryFocus;
+    final sheetRectBeforeToggle = tester.getRect(
+      find.byKey(const ValueKey('keyboardtest-slide-sheet')),
+    );
+
+    await tester.tap(switchFinder);
+    await tester.pump();
+
+    expect(DebugConsole.detailedCollectionEnabled, isTrue);
+    expect(FocusManager.instance.primaryFocus, same(focusBeforeToggle));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('keyboardtest-slide-sheet'))),
+      sheetRectBeforeToggle,
+    );
   });
 
   testWidgets('debug console renders a tail but copies the full log', (

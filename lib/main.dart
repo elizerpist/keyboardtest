@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show FramePhase;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
+import 'performance_diagnostics.dart';
 
 void main() {
   runApp(const KeyboardTestApp());
@@ -284,16 +287,14 @@ class DebugPerformanceProbe {
   static var _started = false;
   static var _headerLogged = false;
   static var _frameSeq = 0;
-  static DateTime? _lastFrameLogAt;
-  static var _suppressedFrames = 0;
-  static var _worstSuppressedTotalMs = 0.0;
+  static int? _lastVsyncStartUs;
+  static final List<double> _observedVsyncMs = <double>[];
 
   static void resetSession() {
     _headerLogged = false;
     _frameSeq = 0;
-    _lastFrameLogAt = null;
-    _suppressedFrames = 0;
-    _worstSuppressedTotalMs = 0;
+    _lastVsyncStartUs = null;
+    _observedVsyncMs.clear();
   }
 
   static void ensureStarted() {
@@ -304,7 +305,8 @@ class DebugPerformanceProbe {
     if (_headerLogged) return;
     _headerLogged = true;
     DebugConsole.log(
-      'frameProbe buildMs=0.0 rasterMs=0.0 totalMs=0.0 '
+      'frameProbe buildMs=0.0 rasterMs=0.0 totalMs=0.0 totalSpanMs=0.0 '
+      'vsyncOverheadMs=0.0 vsyncDeltaMs=0.0 refreshRate=0.0 budgetMs=0.0 '
       'over16ms=false over33ms=false '
       'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
       'suppressed=0 worstTotalMs=0.0 source=flutterFrame '
@@ -313,44 +315,51 @@ class DebugPerformanceProbe {
   }
 
   static void _handleTimings(List<FrameTiming> timings) {
+    if (!DebugConsole.detailedCollectionEnabled) return;
     for (final timing in timings) {
       _frameSeq += 1;
       final buildMs = _ms(timing.buildDuration);
       final rasterMs = _ms(timing.rasterDuration);
-      final totalMs = buildMs + rasterMs;
-      final over16ms = totalMs > 16.7;
-      final over33ms = totalMs > 33.3;
-      final shouldLog = _frameSeq <= 5 || over16ms;
-      if (!shouldLog) continue;
-
-      final now = DateTime.now();
-      final isWarmupFrame = _frameSeq <= 5;
-      final withinRateLimit =
-          _lastFrameLogAt != null &&
-          now.difference(_lastFrameLogAt!) < frameLogRateLimit;
-      if (!isWarmupFrame && withinRateLimit) {
-        _suppressedFrames += 1;
-        _worstSuppressedTotalMs = math.max(_worstSuppressedTotalMs, totalMs);
-        continue;
-      }
-
-      final worstTotalMs = math.max(totalMs, _worstSuppressedTotalMs);
-      DebugConsole.log(
-        'frame seq=$_frameSeq '
-        'buildMs=${buildMs.toStringAsFixed(1)} '
-        'rasterMs=${rasterMs.toStringAsFixed(1)} '
-        'totalMs=${totalMs.toStringAsFixed(1)} '
-        'over16ms=$over16ms over33ms=$over33ms '
-        'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
-        'suppressed=$_suppressedFrames '
-        'worstTotalMs=${worstTotalMs.toStringAsFixed(1)} '
-        'source=flutterFrame '
-        'debugOpen=${DebugConsole.hasExternalListeners} '
-        'warmupFrame=$isWarmupFrame',
+      final totalSpanMs = _ms(timing.totalSpan);
+      final vsyncOverheadMs = _ms(timing.vsyncOverhead);
+      final vsyncStartUs = timing.timestampInMicroseconds(
+        FramePhase.vsyncStart,
       );
-      _lastFrameLogAt = now;
-      _suppressedFrames = 0;
-      _worstSuppressedTotalMs = 0;
+      final vsyncDeltaMs = _lastVsyncStartUs == null
+          ? 0.0
+          : (vsyncStartUs - _lastVsyncStartUs!) /
+                Duration.microsecondsPerMillisecond;
+      _lastVsyncStartUs = vsyncStartUs;
+      if (vsyncDeltaMs.isFinite && vsyncDeltaMs > 0) {
+        if (_observedVsyncMs.length == 120) _observedVsyncMs.removeAt(0);
+        _observedVsyncMs.add(vsyncDeltaMs);
+      }
+      final refreshRate = WidgetsBinding
+          .instance
+          .platformDispatcher
+          .views
+          .first
+          .display
+          .refreshRate;
+      final budgetMs = FrameBudget.fromObservedVsync(
+        refreshRate: refreshRate,
+        observedVsyncMs: _observedVsyncMs,
+      ).milliseconds;
+      DebugConsole._logFrame(
+        FrameDiagnosticSample(
+          buildMs: buildMs,
+          rasterMs: rasterMs,
+          totalSpanMs: totalSpanMs,
+          vsyncOverheadMs: vsyncOverheadMs,
+          vsyncDeltaMs: vsyncDeltaMs,
+          refreshRate: refreshRate,
+          budgetMs: budgetMs,
+          frameNumber: timing.frameNumber,
+          latestMotionSequence: DebugConsole.latestMotionSequence,
+        ),
+        sequence: _frameSeq,
+        warmupFrame: _frameSeq <= 5,
+      );
     }
   }
 
@@ -359,18 +368,113 @@ class DebugPerformanceProbe {
   }
 }
 
+final class _MotionConsoleSample implements DiagnosticSample {
+  const _MotionConsoleSample({
+    required this.sample,
+    required this.spacing,
+    required this.bridgeMs,
+    required this.bridgedGap,
+    required this.dtMs,
+    required this.rawDelta,
+    required this.velocity,
+    required this.droppedLike,
+    required this.idleGap,
+    required this.sampleGap,
+    required this.activeMotion,
+    required this.motionPhase,
+    required this.motionBuilds,
+    required this.sheetBuilds,
+    required this.pillBuilds,
+    required this.focus,
+  });
+
+  final MotionDiagnosticSample sample;
+  final double spacing;
+  final int bridgeMs;
+  final bool bridgedGap;
+  final double dtMs;
+  final double rawDelta;
+  final double velocity;
+  final bool droppedLike;
+  final bool idleGap;
+  final bool sampleGap;
+  final bool activeMotion;
+  final String motionPhase;
+  final int motionBuilds;
+  final int sheetBuilds;
+  final int pillBuilds;
+  final String focus;
+
+  @override
+  String format() {
+    final dock = sample.safeBottom + spacing + sample.visualLift;
+    return '${sample.format()} '
+        'dock=${dock.toStringAsFixed(1)} '
+        'lift=${sample.visualLift.toStringAsFixed(1)} '
+        'sheet=${(-sample.visualLift).toStringAsFixed(1)} '
+        'pill=${dock.toStringAsFixed(1)} '
+        'bridgeMs=$bridgeMs bridgedGap=$bridgedGap '
+        'dtMs=${dtMs.toStringAsFixed(1)} '
+        'rawDelta=${rawDelta.toStringAsFixed(1)} '
+        'velocity=${velocity.toStringAsFixed(1)} '
+        'droppedLike=$droppedLike idleGap=$idleGap sampleGap=$sampleGap '
+        'activeMotion=$activeMotion motionPhase=$motionPhase '
+        'builds motion=$motionBuilds sheet=$sheetBuilds pill=$pillBuilds '
+        'focus=$focus';
+  }
+}
+
+final class _FrameConsoleSample implements DiagnosticSample {
+  const _FrameConsoleSample({
+    required this.sample,
+    required this.sequence,
+    required this.debugOpen,
+    required this.warmupFrame,
+  });
+
+  final FrameDiagnosticSample sample;
+  final int sequence;
+  final bool debugOpen;
+  final bool warmupFrame;
+
+  @override
+  String format() {
+    return '${sample.format()} seq=$sequence '
+        'totalMs=${sample.totalSpanMs.toStringAsFixed(1)} '
+        'over16ms=${sample.totalSpanMs > 16.7} '
+        'over33ms=${sample.totalSpanMs > 33.3} '
+        'rateLimitMs=${DebugPerformanceProbe.frameLogRateLimit.inMilliseconds} '
+        'suppressed=0 worstTotalMs=${sample.totalSpanMs.toStringAsFixed(1)} '
+        'source=flutterFrame debugOpen=$debugOpen warmupFrame=$warmupFrame';
+  }
+}
+
 class DebugConsole {
   DebugConsole._();
 
   static const _maxEntries = 500;
   static const _visibleTailLines = 80;
-  static final List<String> _entries = <String>[];
+  static final DiagnosticRingBuffer _samples = DiagnosticRingBuffer(
+    capacity: _maxEntries,
+  );
+  static final List<FrameDiagnosticSample> _frames = <FrameDiagnosticSample>[];
   static final _DebugConsoleNotifier _notifier = _DebugConsoleNotifier(0);
   static var _notifyScheduled = false;
-  static String? _lastMotionLine;
-  static DateTime? _lastMotionAt;
-  static double? _lastRawInset;
+  static final Stopwatch _clock = Stopwatch()..start();
+  static KeyboardMotionMetrics? _lastMotionMetrics;
+  static int? _lastMotionUs;
   static var _motionSeq = 0;
+  static var _entryCount = 0;
+  static var _detailedCollectionEnabled = true;
+
+  static bool get detailedCollectionEnabled => _detailedCollectionEnabled;
+  static int get latestMotionSequence => _motionSeq;
+
+  static void setDetailedCollectionEnabled(bool enabled) {
+    if (_detailedCollectionEnabled == enabled) return;
+    _detailedCollectionEnabled = enabled;
+    _scheduleNotify();
+  }
 
   static void log(String message) {
     final now = DateTime.now();
@@ -379,22 +483,25 @@ class DebugConsole {
         '${now.minute.toString().padLeft(2, '0')}:'
         '${now.second.toString().padLeft(2, '0')}.'
         '${(now.millisecond ~/ 10).toString().padLeft(2, '0')}';
-    if (_entries.length >= _maxEntries) _entries.removeAt(0);
-    _entries.add('[$stamp] $message');
+    _add(TextDiagnosticSample('[$stamp] $message'));
+  }
+
+  static void _add(DiagnosticSample sample) {
+    _samples.add(sample);
+    _entryCount = math.min(_entryCount + 1, _maxEntries);
     _scheduleNotify();
   }
 
   static void logMotion(KeyboardMotionMetrics metrics) {
-    final line = metrics.toDebugLine();
-    if (_lastMotionLine == line) return;
-    final now = DateTime.now();
-    final dtMs = _lastMotionAt == null
+    if (!_detailedCollectionEnabled) return;
+    if (_sameMotion(metrics, _lastMotionMetrics)) return;
+    final nowUs = _clock.elapsedMicroseconds;
+    final dtMs = _lastMotionUs == null
         ? 0.0
-        : now.difference(_lastMotionAt!).inMicroseconds /
-              Duration.microsecondsPerMillisecond;
-    final rawDelta = _lastRawInset == null
+        : (nowUs - _lastMotionUs!) / Duration.microsecondsPerMillisecond;
+    final rawDelta = _lastMotionMetrics == null
         ? 0.0
-        : metrics.rawInset - _lastRawInset!;
+        : metrics.rawInset - _lastMotionMetrics!.rawInset;
     final velocity = dtMs <= 0 ? 0.0 : rawDelta / (dtMs / 1000);
     final activeMotion = rawDelta.abs() > 0.1 || metrics.lagPx.abs() > 0.1;
     final idleGap = dtMs > 200;
@@ -402,39 +509,98 @@ class DebugConsole {
     final droppedLike = sampleGap;
     final motionPhase = _motionPhase(rawDelta, metrics);
     _motionSeq += 1;
-    _lastMotionLine = line;
-    _lastMotionAt = now;
-    _lastRawInset = metrics.rawInset;
-    log(
-      '$line seq=$_motionSeq '
-      'dtMs=${dtMs.toStringAsFixed(1)} '
-      'rawDelta=${rawDelta.toStringAsFixed(1)} '
-      'velocity=${velocity.toStringAsFixed(1)} '
-      'droppedLike=$droppedLike '
-      'idleGap=$idleGap '
-      'sampleGap=$sampleGap '
-      'activeMotion=$activeMotion '
-      'motionPhase=$motionPhase '
-      '${DebugBuildStats.snapshot()} '
-      'focus=${_primaryFocusLabel()}',
+    _lastMotionMetrics = metrics;
+    _lastMotionUs = nowUs;
+    final sample = MotionDiagnosticSample(
+      sequence: _motionSeq,
+      rawInset: metrics.rawInset,
+      safeBottom: metrics.safeBottom,
+      targetLift: metrics.targetLift,
+      visualLift: metrics.visualLift,
+      lagPx: metrics.lagPx,
+      source: metrics.source,
+      metricsArrivalUs: nowUs,
+      transformBuildUs: nowUs,
+      postFrameUs: nowUs,
+    );
+    _add(
+      _MotionConsoleSample(
+        sample: sample,
+        spacing: metrics.spacing,
+        bridgeMs: metrics.bridgeMs,
+        bridgedGap: metrics.bridgedGap,
+        dtMs: dtMs,
+        rawDelta: rawDelta,
+        velocity: velocity,
+        droppedLike: droppedLike,
+        idleGap: idleGap,
+        sampleGap: sampleGap,
+        activeMotion: activeMotion,
+        motionPhase: motionPhase,
+        motionBuilds: DebugBuildStats.motionBuild,
+        sheetBuilds: DebugBuildStats.sheetBuild,
+        pillBuilds: DebugBuildStats.pillBuild,
+        focus: _primaryFocusLabel(),
+      ),
+    );
+  }
+
+  static void _logFrame(
+    FrameDiagnosticSample sample, {
+    required int sequence,
+    required bool warmupFrame,
+  }) {
+    if (!_detailedCollectionEnabled) return;
+    if (_frames.length == _maxEntries) _frames.removeAt(0);
+    _frames.add(sample);
+    _add(
+      _FrameConsoleSample(
+        sample: sample,
+        sequence: sequence,
+        debugOpen: hasExternalListeners,
+        warmupFrame: warmupFrame,
+      ),
     );
   }
 
   static void clear() {
-    _lastMotionLine = null;
-    _lastMotionAt = null;
-    _lastRawInset = null;
+    _lastMotionMetrics = null;
+    _lastMotionUs = null;
     _motionSeq = 0;
-    _entries.clear();
+    _entryCount = 0;
+    _samples.clear();
+    _frames.clear();
+    _clock
+      ..reset()
+      ..start();
     _scheduleNotify();
   }
 
-  static List<String> get entries => List.unmodifiable(_entries);
-  static String get allText => _entries.join('\n');
-  static String get visibleTailText {
-    final start = math.max(_entries.length - _visibleTailLines, 0);
-    return _entries.skip(start).join('\n');
+  static List<String> get entries {
+    final text = _samples.formattedText;
+    if (text.isEmpty) return const <String>[];
+    return List<String>.unmodifiable(text.split('\n'));
   }
+
+  static int get entryCount => _entryCount;
+
+  static String get allText {
+    final text = _samples.formattedText;
+    if (text.isEmpty) return '';
+    final summary = PerformanceSummary.fromFrames(_frames);
+    return '$text\n\nPerformanceSummary '
+        'frameCount=${summary.frameCount} '
+        'p95BuildMs=${summary.p95BuildMs.toStringAsFixed(1)} '
+        'p95RasterMs=${summary.p95RasterMs.toStringAsFixed(1)} '
+        'p95TotalSpanMs=${summary.p95TotalSpanMs.toStringAsFixed(1)} '
+        'buildOverBudgetCount=${summary.buildOverBudgetCount} '
+        'rasterOverBudgetCount=${summary.rasterOverBudgetCount} '
+        'buildOverTwoBudgetsCount=${summary.buildOverTwoBudgetsCount} '
+        'rasterOverTwoBudgetsCount=${summary.rasterOverTwoBudgetsCount}';
+  }
+
+  static String get visibleTailText =>
+      _samples.formattedTail(_visibleTailLines);
 
   static ValueNotifier<int> get notifier => _notifier;
   static bool get hasExternalListeners => _notifier.hasExternalListeners;
@@ -471,6 +637,20 @@ class DebugConsole {
     }
     if (metrics.lagPx.abs() > 0.1) return 'catchup';
     return 'settled';
+  }
+
+  static bool _sameMotion(
+    KeyboardMotionMetrics current,
+    KeyboardMotionMetrics? previous,
+  ) {
+    return previous != null &&
+        current.rawInset == previous.rawInset &&
+        current.safeBottom == previous.safeBottom &&
+        current.spacing == previous.spacing &&
+        current.visualLift == previous.visualLift &&
+        current.source == previous.source &&
+        current.bridgeMs == previous.bridgeMs &&
+        current.bridgedGap == previous.bridgedGap;
   }
 }
 
@@ -791,7 +971,7 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final count = DebugConsole.entries.length;
+    final count = DebugConsole.entryCount;
     return Dialog(
       key: const ValueKey('debug-console-dialog'),
       backgroundColor: const Color(0xFF1E1E2E),
@@ -837,6 +1017,12 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
                         ),
                       ],
                     ),
+                  ),
+                  Switch(
+                    key: const ValueKey('debug-detailed-collection-switch'),
+                    value: DebugConsole.detailedCollectionEnabled,
+                    onChanged: DebugConsole.setDetailedCollectionEnabled,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   IconButton(
                     key: const ValueKey('debug-console-copy'),
