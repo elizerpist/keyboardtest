@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 void main() {
   runApp(const KeyboardTestApp());
@@ -35,14 +36,14 @@ class _KeyboardTestHomeState extends State<KeyboardTestHome> {
 
   void _openSheet() {
     FocusManager.instance.primaryFocus?.unfocus();
-    MotionDebugLog.clear();
-    MotionDebugLog.log('sheet open');
+    DebugConsole.clear();
+    DebugConsole.log('sheet open');
     setState(() => _sheetOpen = true);
   }
 
   void _closeSheet() {
     FocusManager.instance.primaryFocus?.unfocus();
-    MotionDebugLog.log('sheet close');
+    DebugConsole.log('sheet close');
     setState(() => _sheetOpen = false);
   }
 
@@ -65,7 +66,7 @@ class _KeyboardTestHomeState extends State<KeyboardTestHome> {
             ),
             const KeyboardMotionLayer(),
           ],
-          const KeyboardMotionDebugPanel(),
+          const DebugFloatingButton(),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -114,8 +115,9 @@ class KeyboardMotionMetrics {
   final double safeBottom;
   final double spacing;
 
-  double get dockBottom => math.max(rawInset, safeBottom) + spacing;
+  double get layerPillBottom => safeBottom + spacing;
   double get keyboardLift => math.max(rawInset - safeBottom, 0);
+  double get dockBottom => layerPillBottom + keyboardLift;
   double get sheetTranslation => -keyboardLift;
 
   String toDebugLine() {
@@ -128,12 +130,12 @@ class KeyboardMotionMetrics {
   }
 }
 
-class MotionDebugLog {
-  MotionDebugLog._();
+class DebugConsole {
+  DebugConsole._();
 
-  static const _maxEntries = 8;
-  static final ValueNotifier<List<String>> entries =
-      ValueNotifier<List<String>>(<String>[]);
+  static const _maxEntries = 500;
+  static final List<String> _entries = <String>[];
+  static final ValueNotifier<int> notifier = ValueNotifier<int>(0);
   static String? _lastMotionLine;
 
   static void log(String message) {
@@ -143,12 +145,9 @@ class MotionDebugLog {
         '${now.minute.toString().padLeft(2, '0')}:'
         '${now.second.toString().padLeft(2, '0')}.'
         '${(now.millisecond ~/ 10).toString().padLeft(2, '0')}';
-    final next = <String>[...entries.value, '[$stamp] $message'];
-    if (next.length > _maxEntries) {
-      entries.value = next.sublist(next.length - _maxEntries);
-    } else {
-      entries.value = next;
-    }
+    if (_entries.length >= _maxEntries) _entries.removeAt(0);
+    _entries.add('[$stamp] $message');
+    notifier.value += 1;
   }
 
   static void logMotion(KeyboardMotionMetrics metrics) {
@@ -160,8 +159,12 @@ class MotionDebugLog {
 
   static void clear() {
     _lastMotionLine = null;
-    entries.value = <String>[];
+    _entries.clear();
+    notifier.value += 1;
   }
+
+  static List<String> get entries => List.unmodifiable(_entries);
+  static String get allText => _entries.join('\n');
 }
 
 class KeyboardMotionLayer extends StatelessWidget {
@@ -171,24 +174,24 @@ class KeyboardMotionLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final metrics = KeyboardMotionMetrics.fromContext(context);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      MotionDebugLog.logMotion(metrics);
+      DebugConsole.logMotion(metrics);
     });
-    return Stack(
-      children: [
-        const Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: SlideUpKeyboardSheet(),
+    return Positioned.fill(
+      child: Transform.translate(
+        key: const ValueKey('keyboardtest-keyboard-motion-transform'),
+        offset: Offset(0, metrics.sheetTranslation),
+        child: Stack(
+          children: [
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SlideUpKeyboardSheet(),
+            ),
+            FloatingKeyboardPill(metrics: metrics),
+          ],
         ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: metrics.dockBottom - 8,
-          child: const _SheetBackplate(),
-        ),
-        FloatingKeyboardPill(metrics: metrics),
-      ],
+      ),
     );
   }
 }
@@ -261,24 +264,6 @@ class _SlideUpKeyboardSheetState extends State<SlideUpKeyboardSheet>
   }
 }
 
-class _SheetBackplate extends StatelessWidget {
-  const _SheetBackplate();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const ValueKey('keyboardtest-sheet-backplate'),
-      height: 86,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE7F4F1),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFB7DCD5)),
-      ),
-    );
-  }
-}
-
 class _SheetHandle extends StatelessWidget {
   const _SheetHandle();
 
@@ -305,7 +290,7 @@ class FloatingKeyboardPill extends StatelessWidget {
     return Positioned(
       left: 20,
       right: 20,
-      bottom: metrics.dockBottom,
+      bottom: metrics.layerPillBottom,
       child: const _TextPill(),
     );
   }
@@ -327,7 +312,7 @@ class _TextPill extends StatelessWidget {
         child: TextField(
           key: const ValueKey('keyboardtest-pill-field'),
           textInputAction: TextInputAction.done,
-          onTap: () => MotionDebugLog.log('pill focus request'),
+          onTap: () => DebugConsole.log('pill focus request'),
           cursorColor: const Color(0xFF147A73),
           decoration: const InputDecoration(
             border: InputBorder.none,
@@ -340,50 +325,196 @@ class _TextPill extends StatelessWidget {
   }
 }
 
-class KeyboardMotionDebugPanel extends StatelessWidget {
-  const KeyboardMotionDebugPanel({super.key});
+class DebugFloatingButton extends StatelessWidget {
+  const DebugFloatingButton({super.key, this.bottomOffset});
+
+  final double? bottomOffset;
 
   @override
   Widget build(BuildContext context) {
-    final metrics = KeyboardMotionMetrics.fromContext(context);
     return Positioned(
-      key: const ValueKey('keyboardtest-debug-panel-position'),
-      left: 12,
-      right: 12,
-      top: MediaQuery.viewPaddingOf(context).top + 12,
-      child: ValueListenableBuilder<List<String>>(
-        valueListenable: MotionDebugLog.entries,
-        builder: (context, entries, _) {
-          final visibleEntries = entries.isEmpty
-              ? const <String>['[--:--:--.--] debug ready']
-              : entries;
-          final debugLines = <String>[
-            '[live] ${metrics.toDebugLine()}',
-            ...visibleEntries,
-          ];
-          return DecoratedBox(
-            key: const ValueKey('keyboardtest-debug-panel'),
-            decoration: BoxDecoration(
-              color: const Color(0xE51E293B),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF06B6D4)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              child: Text(
-                debugLines.join('\n'),
-                maxLines: 9,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10,
-                  height: 1.25,
-                  color: Color(0xFFE0F2FE),
-                  fontFeatures: [FontFeature.tabularFigures()],
-                ),
+      key: const ValueKey('debug-floating-button-position'),
+      left: 16,
+      bottom: bottomOffset ?? MediaQuery.viewPaddingOf(context).bottom + 24,
+      child: Material(
+        color: const Color(0xFF1E293B),
+        shape: const CircleBorder(),
+        elevation: 8,
+        child: IconButton(
+          key: const ValueKey('debug-floating-button'),
+          tooltip: 'Debug log',
+          icon: const Icon(Icons.terminal, size: 18, color: Color(0xFF06B6D4)),
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (_) => const DebugConsoleDialog(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class DebugConsoleDialog extends StatefulWidget {
+  const DebugConsoleDialog({super.key});
+
+  @override
+  State<DebugConsoleDialog> createState() => _DebugConsoleDialogState();
+}
+
+class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
+  final TextEditingController _controller = TextEditingController();
+  bool _copied = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.text = DebugConsole.allText;
+    DebugConsole.notifier.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    DebugConsole.notifier.removeListener(_refresh);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (!mounted) return;
+    final text = DebugConsole.allText;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    setState(() => _copied = false);
+  }
+
+  Future<void> _copyAll() async {
+    if (_controller.text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: _controller.text));
+    if (!mounted) return;
+    setState(() => _copied = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = DebugConsole.entries.length;
+    return Dialog(
+      key: const ValueKey('debug-console-dialog'),
+      backgroundColor: const Color(0xFF1E1E2E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 40),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.78,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.terminal,
+                    size: 16,
+                    color: Color(0xFF06B6D4),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const Flexible(
+                          child: Text(
+                            'Debug Console',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Color(0xFFCDD6F4),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '($count)',
+                          style: const TextStyle(
+                            color: Color(0xFF6C7086),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('debug-console-copy'),
+                    style: IconButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: count == 0 ? null : _copyAll,
+                    icon: Icon(
+                      _copied ? Icons.check : Icons.copy_outlined,
+                      size: 16,
+                    ),
+                    color: _copied
+                        ? const Color(0xFF22C55E)
+                        : const Color(0xFF89B4FA),
+                  ),
+                  IconButton(
+                    key: const ValueKey('debug-console-clear'),
+                    style: IconButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: count == 0 ? null : DebugConsole.clear,
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    color: const Color(0xFFEF4444),
+                  ),
+                  IconButton(
+                    key: const ValueKey('debug-console-close'),
+                    style: IconButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, size: 16),
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ],
               ),
             ),
-          );
-        },
+            const Divider(height: 1, color: Color(0xFF313244)),
+            Flexible(
+              child: count == 0
+                  ? const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'Még nincs log.',
+                        style: TextStyle(color: Color(0xFF94A3B8)),
+                      ),
+                    )
+                  : TextField(
+                      key: const ValueKey('debug-console-text'),
+                      controller: _controller,
+                      readOnly: true,
+                      maxLines: null,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11.5,
+                        height: 1.45,
+                        color: Color(0xFFCDD6F4),
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(14),
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

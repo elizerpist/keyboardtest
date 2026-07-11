@@ -112,4 +112,30 @@
 - [x] Add compact visible debug panel with recent motion lines.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
+- [x] Commit, push, wait for online debug APK build, and download the updated artifact.
+
+### Task 6: Correct Sheet Motion And Debug Console
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+- Modify: `docs/superpowers/specs/2026-07-11-keyboardtest-design.md`
+
+**Interfaces:**
+- `KeyboardMotionMetrics.sheetTranslation` remains the shared vertical transform for the keyboard lift.
+- `KeyboardMotionMetrics.layerPillBottom` is the pill's local bottom inside the transformed sheet layer.
+- `DebugConsole.log(String message)` stores debug entries.
+- `DebugFloatingButton` uses `debug-floating-button` and opens `DebugConsoleDialog`.
+- `DebugConsoleDialog` uses `debug-console-dialog`, `debug-console-copy`, `debug-console-clear`, and `debug-console-close`.
+
+- [x] Write failing widget tests proving the actual slide-up sheet and pill move by the same keyboard delta.
+- [x] Write failing widget tests proving no `keyboardtest-sheet-backplate` layer exists.
+- [x] Write failing widget tests proving there is no fixed `keyboardtest-debug-panel`.
+- [x] Write failing widget tests proving the left debug button opens a dialog and the copy button writes log text to the clipboard.
+- [x] Remove the separate `_SheetBackplate` layer.
+- [x] Move the sheet and pill together with one shared `Transform.translate`.
+- [x] Replace the fixed debug overlay with an `exptv2`-style floating debug button and dialog.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
 - [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
