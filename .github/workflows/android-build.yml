@@ -1,0 +1,51 @@
+name: Android Debug APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Compute build name
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Rename APK with commit
+        run: |
+          mkdir -p artifacts
+          cp build/app/outputs/flutter-apk/app-debug.apk \
+            artifacts/keyboardtest-${{ steps.vars.outputs.short_sha }}-debug.apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyboardtest-${{ steps.vars.outputs.short_sha }}-debug-apk
+          path: artifacts/keyboardtest-${{ steps.vars.outputs.short_sha }}-debug.apk
+          if-no-files-found: error
