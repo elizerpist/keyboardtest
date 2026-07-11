@@ -1,14 +1,18 @@
-name: Android Debug APK
+name: Android Profile APK
 
 on:
   push:
     branches:
       - main
+      - 'feat/**'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: Build debug APK
+    name: Build profile APK
     runs-on: ubuntu-latest
 
     steps:
@@ -34,18 +38,28 @@ jobs:
         id: vars
         run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Build debug APK
-        run: flutter build apk --debug
+      - name: Build profile APK
+        run: flutter build apk --profile
 
       - name: Rename APK with commit
         run: |
           mkdir -p artifacts
-          cp build/app/outputs/flutter-apk/app-debug.apk \
-            artifacts/keyboardtest-${{ steps.vars.outputs.short_sha }}-debug.apk
+          cp build/app/outputs/flutter-apk/app-profile.apk \
+            artifacts/keyboardtest-${{ steps.vars.outputs.short_sha }}-profile.apk
 
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: keyboardtest-${{ steps.vars.outputs.short_sha }}-debug-apk
-          path: artifacts/keyboardtest-${{ steps.vars.outputs.short_sha }}-debug.apk
-          if-no-files-found: error
+      - name: Publish profile APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="keyboardtest-${{ steps.vars.outputs.short_sha }}"
+          apk="artifacts/keyboardtest-${{ steps.vars.outputs.short_sha }}-profile.apk"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+          else
+            gh release create "$tag" "$apk" --target "$GITHUB_SHA" \
+              --title "keyboardtest ${{ steps.vars.outputs.short_sha }} profile" \
+              --notes "Profile APK for commit $GITHUB_SHA"
+          fi
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/$(basename "$apk")"
+          echo "### Direct profile APK" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Download $(basename "$apk")]($url)" >> "$GITHUB_STEP_SUMMARY"
