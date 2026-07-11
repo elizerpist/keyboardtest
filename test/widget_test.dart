@@ -201,6 +201,8 @@ void main() {
     expect(copiedText, contains('visualLift=236.0'));
     expect(copiedText, contains('lagPx=0.0'));
     expect(copiedText, contains('source='));
+    expect(copiedText, contains('bridgeMs='));
+    expect(copiedText, contains('bridgedGap='));
     expect(copiedText, contains('seq='));
     expect(copiedText, contains('dtMs='));
     expect(copiedText, contains('rawDelta='));
@@ -216,6 +218,7 @@ void main() {
     expect(copiedText, contains('suppressed='));
     expect(copiedText, contains('worstTotalMs='));
     expect(copiedText, contains('debugOpen='));
+    expect(copiedText, contains('warmupFrame='));
     expect(copiedText, contains('rasterMs='));
     expect(copiedText, contains('totalMs='));
     expect(copiedText, contains('over16ms='));
@@ -280,10 +283,18 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('debug-floating-button')));
     await tester.pumpAndSettle();
 
-    final textField = tester.widget<TextField>(
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('debug-console-dialog')),
+        matching: find.byType(TextField),
+      ),
+      findsNothing,
+    );
+
+    final text = tester.widget<Text>(
       find.byKey(const ValueKey('debug-console-text')),
     );
-    final visibleText = textField.controller!.text;
+    final visibleText = text.data ?? '';
 
     expect(visibleText, isNot(contains('debug-line-001')));
     expect(visibleText, contains('debug-line-120'));

@@ -108,6 +108,8 @@ class KeyboardMotionMetrics {
     required this.spacing,
     double? visualLift,
     this.source = 'imeDirect',
+    this.bridgeMs = 18,
+    this.bridgedGap = false,
   }) : _visualLift = visualLift;
 
   factory KeyboardMotionMetrics.fromContext(BuildContext context) {
@@ -123,6 +125,8 @@ class KeyboardMotionMetrics {
   final double spacing;
   final double? _visualLift;
   final String source;
+  final int bridgeMs;
+  final bool bridgedGap;
 
   double get layerPillBottom => safeBottom + spacing;
   double get targetLift => math.max(rawInset - safeBottom, 0);
@@ -132,13 +136,20 @@ class KeyboardMotionMetrics {
   double get sheetTranslation => -visualLift;
   double get lagPx => targetLift - visualLift;
 
-  KeyboardMotionMetrics withVisualLift(double lift, {required String source}) {
+  KeyboardMotionMetrics withVisualLift(
+    double lift, {
+    required String source,
+    required int bridgeMs,
+    required bool bridgedGap,
+  }) {
     return KeyboardMotionMetrics(
       rawInset: rawInset,
       safeBottom: safeBottom,
       spacing: spacing,
       visualLift: lift,
       source: source,
+      bridgeMs: bridgeMs,
+      bridgedGap: bridgedGap,
     );
   }
 
@@ -152,7 +163,9 @@ class KeyboardMotionMetrics {
         'targetLift=${targetLift.toStringAsFixed(1)} '
         'visualLift=${visualLift.toStringAsFixed(1)} '
         'lagPx=${lagPx.toStringAsFixed(1)} '
-        'source=$source';
+        'source=$source '
+        'bridgeMs=$bridgeMs '
+        'bridgedGap=$bridgedGap';
   }
 }
 
@@ -224,7 +237,8 @@ class DebugPerformanceProbe {
       'frameProbe buildMs=0.0 rasterMs=0.0 totalMs=0.0 '
       'over16ms=false over33ms=false '
       'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
-      'suppressed=0 worstTotalMs=0.0 source=flutterFrame debugOpen=false',
+      'suppressed=0 worstTotalMs=0.0 source=flutterFrame '
+      'debugOpen=false warmupFrame=false',
     );
   }
 
@@ -260,7 +274,9 @@ class DebugPerformanceProbe {
         'rateLimitMs=${frameLogRateLimit.inMilliseconds} '
         'suppressed=$_suppressedFrames '
         'worstTotalMs=${worstTotalMs.toStringAsFixed(1)} '
-        'source=flutterFrame debugOpen=${DebugConsole.hasExternalListeners}',
+        'source=flutterFrame '
+        'debugOpen=${DebugConsole.hasExternalListeners} '
+        'warmupFrame=$isWarmupFrame',
       );
       _lastFrameLogAt = now;
       _suppressedFrames = 0;
@@ -397,19 +413,25 @@ class KeyboardMotionLayer extends StatefulWidget {
 
 class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
   static const _catchupDuration = Duration(milliseconds: 18);
+  static const _maxBridgeDuration = Duration(milliseconds: 32);
 
   double _lastVisualLift = 0;
+  DateTime? _lastTargetAt;
+  double? _lastTargetLift;
+  Duration _activeCatchupDuration = _catchupDuration;
+  var _activeBridgedGap = false;
 
   @override
   Widget build(BuildContext context) {
     DebugBuildStats.motionBuild += 1;
     final targetMetrics = KeyboardMotionMetrics.fromContext(context);
     final targetLift = targetMetrics.targetLift;
+    _updateBridgeState(targetLift);
     final needsCatchup = (_lastVisualLift - targetLift).abs() > 0.1;
     return Positioned.fill(
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: _lastVisualLift, end: targetLift),
-        duration: needsCatchup ? _catchupDuration : Duration.zero,
+        duration: needsCatchup ? _activeCatchupDuration : Duration.zero,
         curve: Curves.linear,
         onEnd: () => _lastVisualLift = targetLift,
         builder: (context, visualLift, child) {
@@ -417,6 +439,8 @@ class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
           final visualMetrics = targetMetrics.withVisualLift(
             visualLift,
             source: _motionSource(targetMetrics, visualLift),
+            bridgeMs: _activeCatchupDuration.inMilliseconds,
+            bridgedGap: _activeBridgedGap,
           );
           WidgetsBinding.instance.addPostFrameCallback((_) {
             DebugConsole.logMotion(visualMetrics);
@@ -450,6 +474,34 @@ class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
       return 'imeSettled';
     }
     return 'imeCatchup';
+  }
+
+  void _updateBridgeState(double targetLift) {
+    final now = DateTime.now();
+    final previousTarget = _lastTargetLift;
+    final targetChanged =
+        previousTarget == null || (targetLift - previousTarget).abs() > 0.1;
+    if (!targetChanged) return;
+
+    final elapsedMs = _lastTargetAt == null
+        ? 0.0
+        : now.difference(_lastTargetAt!).inMicroseconds /
+              Duration.microsecondsPerMillisecond;
+    final activeSampleGap =
+        previousTarget != null && elapsedMs > 24 && elapsedMs <= 64;
+    final bridgeMs = activeSampleGap
+        ? elapsedMs
+              .clamp(
+                _catchupDuration.inMilliseconds,
+                _maxBridgeDuration.inMilliseconds,
+              )
+              .round()
+        : _catchupDuration.inMilliseconds;
+
+    _activeCatchupDuration = Duration(milliseconds: bridgeMs);
+    _activeBridgedGap = activeSampleGap;
+    _lastTargetAt = now;
+    _lastTargetLift = targetLift;
   }
 }
 
@@ -657,31 +709,27 @@ class DebugConsoleDialog extends StatefulWidget {
 }
 
 class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
-  final TextEditingController _controller = TextEditingController();
+  var _visibleText = DebugConsole.visibleTailText;
   bool _copied = false;
 
   @override
   void initState() {
     super.initState();
-    _controller.text = DebugConsole.visibleTailText;
     DebugConsole.notifier.addListener(_refresh);
   }
 
   @override
   void dispose() {
     DebugConsole.notifier.removeListener(_refresh);
-    _controller.dispose();
     super.dispose();
   }
 
   void _refresh() {
     if (!mounted) return;
-    final text = DebugConsole.visibleTailText;
-    _controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    setState(() => _copied = false);
+    setState(() {
+      _visibleText = DebugConsole.visibleTailText;
+      _copied = false;
+    });
   }
 
   Future<void> _copyAll() async {
@@ -792,20 +840,17 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
                         style: TextStyle(color: Color(0xFF94A3B8)),
                       ),
                     )
-                  : TextField(
-                      key: const ValueKey('debug-console-text'),
-                      controller: _controller,
-                      readOnly: true,
-                      maxLines: null,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11.5,
-                        height: 1.45,
-                        color: Color(0xFFCDD6F4),
-                      ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.all(14),
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(14),
+                      child: Text(
+                        _visibleText,
+                        key: const ValueKey('debug-console-text'),
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11.5,
+                          height: 1.45,
+                          color: Color(0xFFCDD6F4),
+                        ),
                       ),
                     ),
             ),

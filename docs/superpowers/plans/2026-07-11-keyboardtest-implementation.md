@@ -217,4 +217,29 @@
 - [x] Change frame timing logs to keep `source=flutterFrame` and add `debugOpen`.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
+- [x] Commit, push, wait for online debug APK build, and download the updated artifact.
+
+### Task 10: Active Sample Gap Bridging And Lightweight Debug Text
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+- Modify: `docs/superpowers/specs/2026-07-11-keyboardtest-design.md`
+
+**Interfaces:**
+- `KeyboardMotionLayer` keeps one shared transform around `SlideUpKeyboardSheet` and `FloatingKeyboardPill`.
+- `KeyboardMotionMetrics.withVisualLift(double visualLift, {required String source, required int bridgeMs, required bool bridgedGap})` carries bridge diagnostics into copied motion logs.
+- `DebugPerformanceProbe` logs `warmupFrame=<bool>` for frame rows.
+- `DebugConsoleDialog` renders `DebugConsole.visibleTailText` as lightweight text inside a scroll view and still copies `DebugConsole.allText`.
+
+- [x] Write failing widget tests proving copied logs include `bridgeMs=`, `bridgedGap=`, and `warmupFrame=`.
+- [x] Write failing widget tests proving the debug dialog no longer has a descendant log `TextField` while copy still exports old and recent log lines.
+- [x] Run targeted Flutter widget tests through Ubuntu/proot and confirm the new tests fail before implementation.
+- [x] Add bridge diagnostics to `KeyboardMotionMetrics`.
+- [x] Add adaptive active sample-gap bridge duration in `KeyboardMotionLayer` without adding a new motion layer.
+- [x] Add `warmupFrame` to frame timing logs.
+- [x] Replace the dialog log `TextField` with lightweight scrollable text.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
 - [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
