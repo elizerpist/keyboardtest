@@ -34,9 +34,9 @@
 - Produces acceptance checklist used before final status.
 
 - [x] Copy starter into the target folder without build/cache/IDE files.
-- [ ] Rename Dart package and Android application identity to `keyboardtest`.
-- [ ] Initialize git repository.
-- [ ] Commit the initial project baseline.
+- [x] Rename Dart package and Android application identity to `keyboardtest`.
+- [x] Initialize git repository.
+- [x] Commit the initial project baseline.
 
 ### Task 2: TDD For FAB, Sheet, And Floating Pill
 
@@ -52,10 +52,10 @@
   - `keyboardtest-floating-pill`
   - `keyboardtest-pill-field`
 
-- [ ] Replace the counter smoke test with failing widget tests for the FAB, sheet reveal, and fake keyboard inset movement.
-- [ ] Run targeted Flutter test through Ubuntu/proot and confirm the new tests fail before implementation.
-- [ ] Replace the counter app with the keyboard test app.
-- [ ] Run targeted Flutter test through Ubuntu/proot and confirm it passes.
+- [x] Replace the counter smoke test with failing widget tests for the FAB, sheet reveal, and fake keyboard inset movement.
+- [x] Run targeted Flutter test through Ubuntu/proot and confirm the new tests fail before implementation.
+- [x] Replace the counter app with the keyboard test app.
+- [x] Run targeted Flutter test through Ubuntu/proot and confirm it passes.
 
 ### Task 3: GitHub Actions Build
 
@@ -65,9 +65,9 @@
 **Interfaces:**
 - Produces `keyboardtest-${{ steps.vars.outputs.short_sha }}-debug-apk` artifact.
 
-- [ ] Add workflow triggered by push and manual dispatch.
-- [ ] Use Flutter stable setup, run `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- [ ] Upload `build/app/outputs/flutter-apk/app-debug.apk` with a short-SHA artifact name.
+- [x] Add workflow triggered by push and manual dispatch.
+- [x] Use Flutter stable setup, run `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
+- [x] Upload `build/app/outputs/flutter-apk/app-debug.apk` with a short-SHA artifact name.
 
 ### Task 4: Verification, Push, Online Build, Download
 
@@ -78,15 +78,15 @@
 - Consumes GitHub CLI auth for `elizerpist`.
 - Produces APK under `/storage/emulated/0/Download/keyboardtest`.
 
-- [ ] Run `flutter analyze` through Ubuntu/proot.
-- [ ] Run `flutter test` through Ubuntu/proot.
-- [ ] Update checklist statuses that local verification proves.
-- [ ] Commit implementation.
-- [ ] Create or reuse GitHub repo `elizerpist/keyboardtest`.
-- [ ] Push `main`.
-- [ ] Wait for GitHub Actions build.
-- [ ] Download artifact and copy APK to `/storage/emulated/0/Download/keyboardtest`.
-- [ ] Update checklist to `DONE` only for verified rows.
+- [x] Run `flutter analyze` through Ubuntu/proot.
+- [x] Run `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses that local verification proves.
+- [x] Commit implementation.
+- [x] Create or reuse GitHub repo `elizerpist/keyboardtest`.
+- [x] Push `main`.
+- [x] Wait for GitHub Actions build.
+- [x] Download artifact and copy APK to `/storage/emulated/0/Download/keyboardtest`.
+- [x] Update checklist to `DONE` only for verified rows.
 
 ### Task 5: Synchronized Sheet Motion And Debug Panel
 
@@ -242,4 +242,4 @@
 - [x] Replace the dialog log `TextField` with lightweight scrollable text.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
-- [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
+- [x] Commit, push, wait for online debug APK build, and download the updated artifact.
