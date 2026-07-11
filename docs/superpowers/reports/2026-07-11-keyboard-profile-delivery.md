@@ -3,31 +3,31 @@
 ## Source
 
 - Branch: `feat/profile-keyboard-performance`
-- Commit: `513c3368865fb254afc1c4b7c213f653d56e1b2a`
-- GitHub Actions run: `29153287157`
+- Commit: `b610a6a96a73ff4f94f670e3869fbe99fa0fba05`
+- GitHub Actions run: `29153985580`
 - Job: `Build profile APK`
 - Job conclusion: `success`
 - Duration: 3 minutes 20 seconds
 
 ## Direct Release Asset
 
-- Release tag: `keyboardtest-513c336`
-- Asset: `keyboardtest-513c336-profile.apk`
+- Release tag: `keyboardtest-b610a6a`
+- Asset: `keyboardtest-b610a6a-profile.apk`
 - Content type: `application/vnd.android.package-archive`
 - Size: `64,391,861` bytes
-- Direct URL: `https://github.com/elizerpist/keyboardtest/releases/download/keyboardtest-513c336/keyboardtest-513c336-profile.apk`
-- GitHub digest: `sha256:187e66900bed28ed4ddd267f637fbda14cf3b46c1d526471f01c2eb00d0b3611`
+- Direct URL: `https://github.com/elizerpist/keyboardtest/releases/download/keyboardtest-b610a6a/keyboardtest-b610a6a-profile.apk`
+- GitHub digest: `sha256:29b6c47855e32e5472191aa25d01aea2b1f0d51127eb694d10ec4471e8008593`
 
 The workflow did not publish an Actions artifact. The URL above addresses the APK Release asset directly.
 
 ## Android Shared Storage
 
-- Path: `/storage/emulated/0/Download/keyboardtest/keyboardtest-513c336-profile.apk`
+- Path: `/storage/emulated/0/Download/keyboardtest/keyboardtest-b610a6a-profile.apk`
 - Detected type: Android package (APK), with Gradle `app-metadata.properties`
 - Size: `64,391,861` bytes
-- SHA-256: `187e66900bed28ed4ddd267f637fbda14cf3b46c1d526471f01c2eb00d0b3611`
+- SHA-256: `29b6c47855e32e5472191aa25d01aea2b1f0d51127eb694d10ec4471e8008593`
 
-A second copy retrieved through `gh release download` had the same size and SHA-256. The temporary comparison copy was deleted after verification; the requested shared-storage APK remains in place.
+The downloaded file matches the SHA-256 digest published by GitHub Release metadata. The requested shared-storage APK remains in place.
 
 ## Remaining Performance Gate
 
