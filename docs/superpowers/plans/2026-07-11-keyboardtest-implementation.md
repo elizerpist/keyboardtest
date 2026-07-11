@@ -87,3 +87,29 @@
 - [ ] Wait for GitHub Actions build.
 - [ ] Download artifact and copy APK to `/storage/emulated/0/Download/keyboardtest`.
 - [ ] Update checklist to `DONE` only for verified rows.
+
+### Task 5: Synchronized Sheet Motion And Debug Panel
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+
+**Interfaces:**
+- Produces `KeyboardMotionMetrics.fromContext(BuildContext context)`.
+- Produces `MotionDebugLog`, a small in-memory visible debug log for the test app.
+- Keeps widget keys:
+  - `keyboardtest-slide-sheet`
+  - `keyboardtest-sheet-backplate`
+  - `keyboardtest-floating-pill`
+  - `keyboardtest-debug-panel`
+
+- [x] Add failing widget tests for same-frame sheet backplate and pill motion.
+- [x] Add failing widget tests for safe-area bounce prevention when inset returns to zero.
+- [x] Add failing widget tests for on-screen debug values.
+- [x] Implement `KeyboardMotionMetrics` with `dockBottom = max(rawInset, safeBottom) + 12`.
+- [x] Move the backplate and pill from the same metrics without independent animations.
+- [x] Add compact visible debug panel with recent motion lines.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
+- [ ] Commit, push, wait for online debug APK build, and download the updated artifact.
