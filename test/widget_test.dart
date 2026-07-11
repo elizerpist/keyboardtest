@@ -433,6 +433,32 @@ void main() {
     },
   );
 
+  testWidgets('frame-summary storage stays bounded at its fixed capacity', (
+    tester,
+  ) async {
+    DebugConsole.setDetailedCollectionEnabled(true);
+    DebugConsole.clear();
+    addTearDown(DebugConsole.clear);
+
+    for (var index = 0; index <= 500; index += 1) {
+      DebugConsole.recordFrameForTesting(
+        FrameDiagnosticSample(
+          buildMs: index.toDouble(),
+          rasterMs: 1,
+          totalSpanMs: 1,
+          vsyncOverheadMs: 1,
+          vsyncDeltaMs: 16.7,
+          refreshRate: 60,
+          budgetMs: 16.7,
+          frameNumber: index,
+          latestMotionSequence: 0,
+        ),
+      );
+    }
+
+    expect(DebugConsole.allText, contains('frameCount=500'));
+  });
+
   testWidgets('debug dialog exposes a focus-neutral collection switch', (
     tester,
   ) async {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:ui' show FramePhase;
 
@@ -454,6 +455,51 @@ final class _FrameConsoleSample implements DiagnosticSample {
   }
 }
 
+final class _FixedRingBuffer<T> extends IterableBase<T> {
+  _FixedRingBuffer({required this.capacity}) : _items = _storage(capacity);
+
+  final int capacity;
+  final List<T?> _items;
+  var _start = 0;
+  var _length = 0;
+
+  static List<T?> _storage<T>(int capacity) {
+    if (capacity <= 0) {
+      throw ArgumentError.value(capacity, 'capacity', 'must be positive');
+    }
+    return List<T?>.filled(capacity, null, growable: false);
+  }
+
+  void add(T item) {
+    if (_length < capacity) {
+      _items[(_start + _length) % capacity] = item;
+      _length += 1;
+      return;
+    }
+
+    _items[_start] = item;
+    _start = (_start + 1) % capacity;
+  }
+
+  void clear() {
+    _items.fillRange(0, capacity, null);
+    _start = 0;
+    _length = 0;
+  }
+
+  @override
+  int get length => _length;
+
+  @override
+  Iterator<T> get iterator => _orderedItems().iterator;
+
+  Iterable<T> _orderedItems() sync* {
+    for (var offset = 0; offset < _length; offset += 1) {
+      yield _items[(_start + offset) % capacity] as T;
+    }
+  }
+}
+
 class DebugConsole {
   DebugConsole._();
 
@@ -462,9 +508,10 @@ class DebugConsole {
   static final DiagnosticRingBuffer _samples = DiagnosticRingBuffer(
     capacity: _maxEntries,
   );
-  static final FrameDiagnosticRingBuffer _frames = FrameDiagnosticRingBuffer(
-    capacity: _maxEntries,
-  );
+  static final _FixedRingBuffer<DiagnosticSample> _entrySamples =
+      _FixedRingBuffer<DiagnosticSample>(capacity: _maxEntries);
+  static final _FixedRingBuffer<FrameDiagnosticSample> _frames =
+      _FixedRingBuffer<FrameDiagnosticSample>(capacity: _maxEntries);
   static final _DebugConsoleNotifier _notifier = _DebugConsoleNotifier(0);
   static var _notifyScheduled = false;
   static final Stopwatch _clock = Stopwatch()..start();
@@ -497,6 +544,7 @@ class DebugConsole {
 
   static void _add(DiagnosticSample sample, {bool notify = true}) {
     _samples.add(sample);
+    _entrySamples.add(sample);
     _entryCount = math.min(_entryCount + 1, _maxEntries);
     if (notify) _scheduleNotify();
   }
@@ -602,6 +650,7 @@ class DebugConsole {
     _motionSeq = 0;
     _entryCount = 0;
     _samples.clear();
+    _entrySamples.clear();
     _frames.clear();
     _lastVisibleFrameLogUs = null;
     _suppressedFrameLogs = 0;
@@ -613,7 +662,9 @@ class DebugConsole {
   }
 
   static List<String> get entries {
-    return _samples.formattedEntries;
+    return List<String>.unmodifiable(
+      _entrySamples.map((sample) => sample.format()),
+    );
   }
 
   static int get entryCount => _entryCount;
