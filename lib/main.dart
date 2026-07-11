@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
-import 'dart:ui' show FramePhase;
+import 'dart:ui' show FlutterView, FramePhase;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -180,6 +180,7 @@ class KeyboardMotionMetrics {
     required this.rawInset,
     required this.safeBottom,
     required this.spacing,
+    this.metricsArrivalUs = 0,
     double? visualLift,
     this.source = 'imeDirect',
     this.bridgeMs = 0,
@@ -197,6 +198,7 @@ class KeyboardMotionMetrics {
   final double rawInset;
   final double safeBottom;
   final double spacing;
+  final int metricsArrivalUs;
   final double? _visualLift;
   final String source;
   final int bridgeMs;
@@ -220,6 +222,7 @@ class KeyboardMotionMetrics {
       rawInset: rawInset,
       safeBottom: safeBottom,
       spacing: spacing,
+      metricsArrivalUs: metricsArrivalUs,
       visualLift: lift,
       source: source,
       bridgeMs: bridgeMs,
@@ -267,17 +270,22 @@ class DebugBuildStats {
   DebugBuildStats._();
 
   static int motionBuild = 0;
+  static int transformBuild = 0;
   static int sheetBuild = 0;
-  static int pillBuild = 0;
+  static int textPillBuild = 0;
+
+  static int get pillBuild => textPillBuild;
 
   static void reset() {
     motionBuild = 0;
+    transformBuild = 0;
     sheetBuild = 0;
-    pillBuild = 0;
+    textPillBuild = 0;
   }
 
   static String snapshot() {
-    return 'builds motion=$motionBuild sheet=$sheetBuild pill=$pillBuild';
+    return 'builds motion=$motionBuild transform=$transformBuild '
+        'sheet=$sheetBuild pill=$textPillBuild';
   }
 }
 
@@ -549,10 +557,18 @@ class DebugConsole {
     if (notify) _scheduleNotify();
   }
 
-  static void logMotion(KeyboardMotionMetrics metrics) {
+  static void logMotion(
+    KeyboardMotionMetrics metrics, {
+    int? metricsArrivalUs,
+    int? transformBuildUs,
+    int? postFrameUs,
+  }) {
     if (!_detailedCollectionEnabled) return;
     if (_sameMotion(metrics, _lastMotionMetrics)) return;
     final nowUs = _clock.elapsedMicroseconds;
+    final effectiveArrivalUs = metricsArrivalUs ?? nowUs;
+    final effectiveBuildUs = transformBuildUs ?? effectiveArrivalUs;
+    final effectivePostFrameUs = postFrameUs ?? effectiveBuildUs;
     final dtMs = _lastMotionUs == null
         ? 0.0
         : (nowUs - _lastMotionUs!) / Duration.microsecondsPerMillisecond;
@@ -576,9 +592,9 @@ class DebugConsole {
       visualLift: metrics.visualLift,
       lagPx: metrics.lagPx,
       source: metrics.source,
-      metricsArrivalUs: nowUs,
-      transformBuildUs: nowUs,
-      postFrameUs: nowUs,
+      metricsArrivalUs: effectiveArrivalUs,
+      transformBuildUs: effectiveBuildUs,
+      postFrameUs: effectivePostFrameUs,
     );
     _add(
       _MotionConsoleSample(
@@ -746,46 +762,86 @@ class KeyboardMotionLayer extends StatefulWidget {
   State<KeyboardMotionLayer> createState() => _KeyboardMotionLayerState();
 }
 
-class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
-  DateTime? _lastTargetAt;
+class _KeyboardMotionLayerState extends State<KeyboardMotionLayer>
+    with WidgetsBindingObserver {
+  late final Stopwatch _sessionClock;
+  late final ValueNotifier<KeyboardMotionMetrics> _metrics;
+  FlutterView? _view;
+  int? _lastTargetUs;
   double? _lastTargetLift;
   var _activeBridgeMs = 0;
   var _activeBridgedGap = false;
 
   @override
-  Widget build(BuildContext context) {
-    DebugBuildStats.motionBuild += 1;
-    final targetMetrics = KeyboardMotionMetrics.fromContext(context);
-    final targetLift = targetMetrics.targetLift;
-    _recordTargetSample(targetLift);
-    final visualMetrics = targetMetrics.withVisualLift(
-      targetLift,
+  void initState() {
+    super.initState();
+    _sessionClock = Stopwatch()..start();
+    _metrics = ValueNotifier<KeyboardMotionMetrics>(
+      const KeyboardMotionMetrics(rawInset: 0, safeBottom: 0, spacing: 12),
+    );
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final view = View.of(context);
+    if (!identical(_view, view)) {
+      _view = view;
+      _publishCurrentMetrics();
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    _publishCurrentMetrics();
+  }
+
+  void _publishCurrentMetrics() {
+    final view = _view;
+    if (view == null) return;
+    final arrivalUs = _sessionClock.elapsedMicroseconds;
+    final devicePixelRatio = view.devicePixelRatio;
+    final targetMetrics = KeyboardMotionMetrics(
+      rawInset: view.viewInsets.bottom / devicePixelRatio,
+      safeBottom: view.viewPadding.bottom / devicePixelRatio,
+      spacing: 12,
+      metricsArrivalUs: arrivalUs,
+    );
+    _recordTargetSample(targetMetrics.targetLift, arrivalUs);
+    _metrics.value = targetMetrics.withVisualLift(
+      targetMetrics.targetLift,
       source: _motionSource(),
       bridgeMs: _activeBridgeMs,
       bridgedGap: _activeBridgedGap,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      DebugConsole.logMotion(visualMetrics);
-    });
-    return Positioned.fill(
-      child: Transform.translate(
-        key: const ValueKey('keyboardtest-keyboard-motion-transform'),
-        offset: Offset(0, visualMetrics.sheetTranslation),
-        child: RepaintBoundary(
-          key: const ValueKey('keyboardtest-motion-repaint-boundary'),
-          child: Stack(
-            children: [
-              const Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: SlideUpKeyboardSheet(),
-              ),
-              FloatingKeyboardPill(metrics: targetMetrics),
-            ],
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    DebugBuildStats.motionBuild += 1;
+    return ValueListenableBuilder<KeyboardMotionMetrics>(
+      valueListenable: _metrics,
+      child: const _MotionVisualContent(),
+      builder: (context, metrics, child) {
+        DebugBuildStats.transformBuild += 1;
+        final transformBuildUs = _sessionClock.elapsedMicroseconds;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          DebugConsole.logMotion(
+            metrics,
+            metricsArrivalUs: metrics.metricsArrivalUs,
+            transformBuildUs: transformBuildUs,
+            postFrameUs: _sessionClock.elapsedMicroseconds,
+          );
+        });
+        return Positioned.fill(
+          child: Transform.translate(
+            key: const ValueKey('keyboardtest-keyboard-motion-transform'),
+            offset: Offset(0, metrics.sheetTranslation),
+            child: child,
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -794,8 +850,7 @@ class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
     return 'imeDirect';
   }
 
-  void _recordTargetSample(double targetLift) {
-    final now = DateTime.now();
+  void _recordTargetSample(double targetLift, int nowUs) {
     final previousTarget = _lastTargetLift;
     final targetChanged =
         previousTarget == null || (targetLift - previousTarget).abs() > 0.1;
@@ -805,17 +860,46 @@ class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
       return;
     }
 
-    final elapsedMs = _lastTargetAt == null
+    final elapsedMs = _lastTargetUs == null
         ? 0.0
-        : now.difference(_lastTargetAt!).inMicroseconds /
-              Duration.microsecondsPerMillisecond;
+        : (nowUs - _lastTargetUs!) / Duration.microsecondsPerMillisecond;
     final activeSampleGap =
         previousTarget != null && elapsedMs > 24 && elapsedMs <= 64;
 
     _activeBridgeMs = 0;
     _activeBridgedGap = activeSampleGap;
-    _lastTargetAt = now;
+    _lastTargetUs = nowUs;
     _lastTargetLift = targetLift;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _metrics.dispose();
+    _sessionClock.stop();
+    super.dispose();
+  }
+}
+
+class _MotionVisualContent extends StatelessWidget {
+  const _MotionVisualContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return const RepaintBoundary(
+      key: ValueKey('keyboardtest-motion-repaint-boundary'),
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SlideUpKeyboardSheet(),
+          ),
+          FloatingKeyboardPill(),
+        ],
+      ),
+    );
   }
 }
 
@@ -908,17 +992,15 @@ class _SheetHandle extends StatelessWidget {
 }
 
 class FloatingKeyboardPill extends StatelessWidget {
-  const FloatingKeyboardPill({super.key, required this.metrics});
-
-  final KeyboardMotionMetrics metrics;
+  const FloatingKeyboardPill({super.key});
 
   @override
   Widget build(BuildContext context) {
-    DebugBuildStats.pillBuild += 1;
+    DebugBuildStats.textPillBuild += 1;
     return Positioned(
       left: 20,
       right: 20,
-      bottom: metrics.layerPillBottom,
+      bottom: MediaQuery.viewPaddingOf(context).bottom + 12,
       child: const RepaintBoundary(
         key: ValueKey('keyboardtest-pill-repaint-boundary'),
         child: _TextPill(),

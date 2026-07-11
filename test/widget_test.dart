@@ -158,6 +158,39 @@ void main() {
     await expectImmediateLift(rawInset: 48, expectedLift: 24);
   });
 
+  testWidgets(
+    'keyboard metrics rebuild only the transform and report arrival latency',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewPadding = const FakeViewPadding(bottom: 24);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetViewPadding();
+        tester.view.resetViewInsets();
+      });
+
+      await tester.pumpWidget(const KeyboardTestApp());
+      await tester.tap(
+        find.byKey(const ValueKey('keyboardtest-open-sheet-fab')),
+      );
+      await tester.pumpAndSettle();
+
+      for (final rawInset in <double>[260, 180, 320, 0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: rawInset);
+        await tester.pump();
+      }
+      await tester.pump();
+
+      expect(DebugBuildStats.sheetBuild, 1);
+      expect(DebugBuildStats.textPillBuild, 1);
+      expect(DebugBuildStats.transformBuild, greaterThan(3));
+      expect(DebugConsole.allText, contains('metricsToBuildMs='));
+      expect(DebugConsole.allText, contains('metricsToPostFrameMs='));
+    },
+  );
+
   testWidgets('text input is prewarmed before first pill focus', (
     tester,
   ) async {
