@@ -108,7 +108,7 @@ class KeyboardMotionMetrics {
     required this.spacing,
     double? visualLift,
     this.source = 'imeDirect',
-    this.bridgeMs = 18,
+    this.bridgeMs = 0,
     this.bridgedGap = false,
   }) : _visualLift = visualLift;
 
@@ -412,13 +412,9 @@ class KeyboardMotionLayer extends StatefulWidget {
 }
 
 class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
-  static const _catchupDuration = Duration(milliseconds: 18);
-  static const _maxBridgeDuration = Duration(milliseconds: 32);
-
-  double _lastVisualLift = 0;
   DateTime? _lastTargetAt;
   double? _lastTargetLift;
-  Duration _activeCatchupDuration = _catchupDuration;
+  var _activeBridgeMs = 0;
   var _activeBridgedGap = false;
 
   @override
@@ -426,31 +422,20 @@ class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
     DebugBuildStats.motionBuild += 1;
     final targetMetrics = KeyboardMotionMetrics.fromContext(context);
     final targetLift = targetMetrics.targetLift;
-    _updateBridgeState(targetLift);
-    final needsCatchup = (_lastVisualLift - targetLift).abs() > 0.1;
+    _recordTargetSample(targetLift);
+    final visualMetrics = targetMetrics.withVisualLift(
+      targetLift,
+      source: _motionSource(),
+      bridgeMs: _activeBridgeMs,
+      bridgedGap: _activeBridgedGap,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      DebugConsole.logMotion(visualMetrics);
+    });
     return Positioned.fill(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: _lastVisualLift, end: targetLift),
-        duration: needsCatchup ? _activeCatchupDuration : Duration.zero,
-        curve: Curves.linear,
-        onEnd: () => _lastVisualLift = targetLift,
-        builder: (context, visualLift, child) {
-          _lastVisualLift = visualLift;
-          final visualMetrics = targetMetrics.withVisualLift(
-            visualLift,
-            source: _motionSource(targetMetrics, visualLift),
-            bridgeMs: _activeCatchupDuration.inMilliseconds,
-            bridgedGap: _activeBridgedGap,
-          );
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            DebugConsole.logMotion(visualMetrics);
-          });
-          return Transform.translate(
-            key: const ValueKey('keyboardtest-keyboard-motion-transform'),
-            offset: Offset(0, visualMetrics.sheetTranslation),
-            child: child,
-          );
-        },
+      child: Transform.translate(
+        key: const ValueKey('keyboardtest-keyboard-motion-transform'),
+        offset: Offset(0, visualMetrics.sheetTranslation),
         child: RepaintBoundary(
           key: const ValueKey('keyboardtest-motion-repaint-boundary'),
           child: Stack(
@@ -469,19 +454,21 @@ class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
     );
   }
 
-  String _motionSource(KeyboardMotionMetrics metrics, double visualLift) {
-    if ((metrics.targetLift - visualLift).abs() <= 0.1) {
-      return 'imeSettled';
-    }
-    return 'imeCatchup';
+  String _motionSource() {
+    if (_activeBridgedGap) return 'imeDirectGap';
+    return 'imeDirect';
   }
 
-  void _updateBridgeState(double targetLift) {
+  void _recordTargetSample(double targetLift) {
     final now = DateTime.now();
     final previousTarget = _lastTargetLift;
     final targetChanged =
         previousTarget == null || (targetLift - previousTarget).abs() > 0.1;
-    if (!targetChanged) return;
+    if (!targetChanged) {
+      _activeBridgeMs = 0;
+      _activeBridgedGap = false;
+      return;
+    }
 
     final elapsedMs = _lastTargetAt == null
         ? 0.0
@@ -489,16 +476,8 @@ class _KeyboardMotionLayerState extends State<KeyboardMotionLayer> {
               Duration.microsecondsPerMillisecond;
     final activeSampleGap =
         previousTarget != null && elapsedMs > 24 && elapsedMs <= 64;
-    final bridgeMs = activeSampleGap
-        ? elapsedMs
-              .clamp(
-                _catchupDuration.inMilliseconds,
-                _maxBridgeDuration.inMilliseconds,
-              )
-              .round()
-        : _catchupDuration.inMilliseconds;
 
-    _activeCatchupDuration = Duration(milliseconds: bridgeMs);
+    _activeBridgeMs = 0;
     _activeBridgedGap = activeSampleGap;
     _lastTargetAt = now;
     _lastTargetLift = targetLift;

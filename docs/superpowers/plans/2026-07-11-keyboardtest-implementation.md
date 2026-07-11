@@ -206,7 +206,7 @@
 - `DebugConsole.allText` remains the full copy/export payload.
 - `DebugConsole.logMotion(KeyboardMotionMetrics metrics)` appends `idleGap`, `sampleGap`, `activeMotion`, and `motionPhase`.
 - `DebugPerformanceProbe` logs `source=flutterFrame debugOpen=<bool>` for frame timing rows.
-- `KeyboardMotionLayer` keeps the `18 ms` shared-transform catch-up from `keyboard-smooth-v1`.
+- `KeyboardMotionLayer` keeps the shared-transform architecture from `keyboard-smooth-v1`.
 
 - [x] Write failing widget tests proving the dialog text is truncated to recent tail lines but copied text contains full history.
 - [x] Write failing widget tests proving copied diagnostics include `idleGap`, `sampleGap`, `activeMotion`, `motionPhase`, and `debugOpen`.
@@ -237,9 +237,30 @@
 - [x] Write failing widget tests proving the debug dialog no longer has a descendant log `TextField` while copy still exports old and recent log lines.
 - [x] Run targeted Flutter widget tests through Ubuntu/proot and confirm the new tests fail before implementation.
 - [x] Add bridge diagnostics to `KeyboardMotionMetrics`.
-- [x] Add adaptive active sample-gap bridge duration in `KeyboardMotionLayer` without adding a new motion layer.
+- [x] Add adaptive active sample-gap bridge duration in `KeyboardMotionLayer` without adding a new motion layer. This was later superseded by Task 11 after measured downward lag.
 - [x] Add `warmupFrame` to frame timing logs.
 - [x] Replace the dialog log `TextField` with lightweight scrollable text.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
 - [x] Commit, push, wait for online debug APK build, and download the updated artifact.
+
+### Task 11: Direct Active IME Sample Sync
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+- Modify: `docs/superpowers/specs/2026-07-11-keyboardtest-design.md`
+
+**Interfaces:**
+- `KeyboardMotionLayer` remains the only shared transform owner for the actual `SlideUpKeyboardSheet` and `FloatingKeyboardPill`.
+- `KeyboardMotionMetrics.withVisualLift(...)` still carries copied diagnostics, but active IME samples set `visualLift == targetLift` in the same frame.
+- `bridgedGap` remains a diagnostic flag for compact active IME sample gaps; `bridgeMs=0` indicates no extra visual catch-up animation is being applied.
+
+- [x] Write a failing widget test proving opening and closing IME samples are visible in the same frame without waiting for catch-up.
+- [x] Run the targeted Flutter widget test through Ubuntu/proot and confirm it fails before implementation.
+- [x] Remove the extra `TweenAnimationBuilder` catch-up from `KeyboardMotionLayer`.
+- [x] Keep sample-gap diagnostics while applying the target lift directly.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
+- [ ] Commit, push, wait for online debug APK build, and download the updated artifact.

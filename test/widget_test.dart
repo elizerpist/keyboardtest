@@ -104,6 +104,59 @@ void main() {
     },
   );
 
+  testWidgets('active IME samples are applied in the same frame', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewPadding = const FakeViewPadding(bottom: 24);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetViewPadding();
+      tester.view.resetViewInsets();
+    });
+
+    await tester.pumpWidget(const KeyboardTestApp());
+    await tester.tap(find.byKey(const ValueKey('keyboardtest-open-sheet-fab')));
+    await tester.pumpAndSettle();
+
+    final closedSheetTop = tester
+        .getRect(find.byKey(const ValueKey('keyboardtest-slide-sheet')))
+        .top;
+    final closedPillTop = tester
+        .getRect(find.byKey(const ValueKey('keyboardtest-floating-pill')))
+        .top;
+
+    Future<void> expectImmediateLift({
+      required double rawInset,
+      required double expectedLift,
+    }) async {
+      tester.view.viewInsets = FakeViewPadding(bottom: rawInset);
+      await tester.pump();
+
+      final sheetTop = tester
+          .getRect(find.byKey(const ValueKey('keyboardtest-slide-sheet')))
+          .top;
+      final pillTop = tester
+          .getRect(find.byKey(const ValueKey('keyboardtest-floating-pill')))
+          .top;
+
+      expect(
+        closedSheetTop - sheetTop,
+        moreOrLessEquals(expectedLift, epsilon: 0.1),
+      );
+      expect(
+        closedPillTop - pillTop,
+        moreOrLessEquals(expectedLift, epsilon: 0.1),
+      );
+    }
+
+    await expectImmediateLift(rawInset: 332, expectedLift: 308);
+    await expectImmediateLift(rawInset: 140, expectedLift: 116);
+    await expectImmediateLift(rawInset: 48, expectedLift: 24);
+  });
+
   testWidgets('pill returns directly to safe-area dock without bottom bounce', (
     tester,
   ) async {
