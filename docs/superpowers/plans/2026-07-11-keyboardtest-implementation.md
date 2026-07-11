@@ -138,4 +138,33 @@
 - [x] Replace the fixed debug overlay with an `exptv2`-style floating debug button and dialog.
 - [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
 - [x] Update checklist statuses from verified evidence.
+- [x] Commit, push, wait for online debug APK build, and download the updated artifact.
+
+### Task 7: Jank Diagnostics And Motion Isolation
+
+**Files:**
+- Modify: `test/widget_test.dart`
+- Modify: `lib/main.dart`
+- Modify: `docs/superpowers/checklists/2026-07-11-keyboardtest-checklist.md`
+- Modify: `docs/superpowers/specs/2026-07-11-keyboardtest-design.md`
+
+**Interfaces:**
+- `DebugConsole.logMotion(KeyboardMotionMetrics metrics)` logs `seq`, `dtMs`, `rawDelta`, `velocity`, `droppedLike`, and build counters.
+- `DebugPerformanceProbe.ensureStarted()` installs a frame timing callback and logs `buildMs`, `rasterMs`, `totalMs`, `over16ms`, and `over33ms` fields when timings arrive.
+- `DebugBuildStats` tracks `motionBuild`, `sheetBuild`, and `pillBuild`.
+- Repaint boundary keys:
+  - `keyboardtest-motion-repaint-boundary`
+  - `keyboardtest-sheet-repaint-boundary`
+  - `keyboardtest-pill-repaint-boundary`
+
+- [x] Write failing widget tests proving copied logs include jank diagnostic fields.
+- [x] Write failing widget tests proving motion/sheet/pill repaint boundaries exist.
+- [x] Add batched debug notifier so log writes do not synchronously rebuild the dialog for every keyboard sample.
+- [x] Add motion sample diagnostics: sequence number, milliseconds since previous sample, raw inset delta, velocity, and dropped-frame-like marker.
+- [x] Add frame timing instrumentation with build/raster/total milliseconds and over-budget flags.
+- [x] Add build counters for motion layer, sheet, and pill.
+- [x] Add focus change logs for the pill field.
+- [x] Wrap moving layer, sheet, and pill in repaint boundaries.
+- [x] Run `flutter analyze` and `flutter test` through Ubuntu/proot.
+- [x] Update checklist statuses from verified evidence.
 - [ ] Commit, push, wait for online debug APK build, and download the updated artifact.

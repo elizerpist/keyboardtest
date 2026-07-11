@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 void main() {
@@ -36,7 +37,10 @@ class _KeyboardTestHomeState extends State<KeyboardTestHome> {
 
   void _openSheet() {
     FocusManager.instance.primaryFocus?.unfocus();
+    DebugBuildStats.reset();
+    DebugPerformanceProbe.resetSession();
     DebugConsole.clear();
+    DebugPerformanceProbe.ensureStarted();
     DebugConsole.log('sheet open');
     setState(() => _sheetOpen = true);
   }
@@ -130,13 +134,105 @@ class KeyboardMotionMetrics {
   }
 }
 
+class _DebugConsoleNotifier extends ValueNotifier<int> {
+  _DebugConsoleNotifier(super.value);
+
+  var _listenerCount = 0;
+
+  bool get hasExternalListeners => _listenerCount > 0;
+
+  @override
+  void addListener(VoidCallback listener) {
+    _listenerCount += 1;
+    super.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    if (_listenerCount > 0) _listenerCount -= 1;
+    super.removeListener(listener);
+  }
+}
+
+class DebugBuildStats {
+  DebugBuildStats._();
+
+  static int motionBuild = 0;
+  static int sheetBuild = 0;
+  static int pillBuild = 0;
+
+  static void reset() {
+    motionBuild = 0;
+    sheetBuild = 0;
+    pillBuild = 0;
+  }
+
+  static String snapshot() {
+    return 'builds motion=$motionBuild sheet=$sheetBuild pill=$pillBuild';
+  }
+}
+
+class DebugPerformanceProbe {
+  DebugPerformanceProbe._();
+
+  static var _started = false;
+  static var _headerLogged = false;
+  static var _frameSeq = 0;
+
+  static void resetSession() {
+    _headerLogged = false;
+    _frameSeq = 0;
+  }
+
+  static void ensureStarted() {
+    if (!_started) {
+      SchedulerBinding.instance.addTimingsCallback(_handleTimings);
+      _started = true;
+    }
+    if (_headerLogged) return;
+    _headerLogged = true;
+    DebugConsole.log(
+      'frameProbe buildMs=0.0 rasterMs=0.0 totalMs=0.0 '
+      'over16ms=false over33ms=false',
+    );
+  }
+
+  static void _handleTimings(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      _frameSeq += 1;
+      final buildMs = _ms(timing.buildDuration);
+      final rasterMs = _ms(timing.rasterDuration);
+      final totalMs = buildMs + rasterMs;
+      final over16ms = totalMs > 16.7;
+      final over33ms = totalMs > 33.3;
+      if (_frameSeq <= 5 || over16ms) {
+        DebugConsole.log(
+          'frame seq=$_frameSeq '
+          'buildMs=${buildMs.toStringAsFixed(1)} '
+          'rasterMs=${rasterMs.toStringAsFixed(1)} '
+          'totalMs=${totalMs.toStringAsFixed(1)} '
+          'over16ms=$over16ms over33ms=$over33ms',
+        );
+      }
+    }
+  }
+
+  static double _ms(Duration duration) {
+    return duration.inMicroseconds / Duration.microsecondsPerMillisecond;
+  }
+}
+
 class DebugConsole {
   DebugConsole._();
 
   static const _maxEntries = 500;
   static final List<String> _entries = <String>[];
-  static final ValueNotifier<int> notifier = ValueNotifier<int>(0);
+  static final _DebugConsoleNotifier _notifier = _DebugConsoleNotifier(0);
+  static var _notifyScheduled = false;
   static String? _lastMotionLine;
+  static DateTime? _lastMotionAt;
+  static double? _lastRawInset;
+  static var _motionSeq = 0;
 
   static void log(String message) {
     final now = DateTime.now();
@@ -147,24 +243,68 @@ class DebugConsole {
         '${(now.millisecond ~/ 10).toString().padLeft(2, '0')}';
     if (_entries.length >= _maxEntries) _entries.removeAt(0);
     _entries.add('[$stamp] $message');
-    notifier.value += 1;
+    _scheduleNotify();
   }
 
   static void logMotion(KeyboardMotionMetrics metrics) {
     final line = metrics.toDebugLine();
     if (_lastMotionLine == line) return;
+    final now = DateTime.now();
+    final dtMs = _lastMotionAt == null
+        ? 0.0
+        : now.difference(_lastMotionAt!).inMicroseconds /
+              Duration.microsecondsPerMillisecond;
+    final rawDelta = _lastRawInset == null
+        ? 0.0
+        : metrics.rawInset - _lastRawInset!;
+    final velocity = dtMs <= 0 ? 0.0 : rawDelta / (dtMs / 1000);
+    final droppedLike = dtMs > 24;
+    _motionSeq += 1;
     _lastMotionLine = line;
-    log(line);
+    _lastMotionAt = now;
+    _lastRawInset = metrics.rawInset;
+    log(
+      '$line seq=$_motionSeq '
+      'dtMs=${dtMs.toStringAsFixed(1)} '
+      'rawDelta=${rawDelta.toStringAsFixed(1)} '
+      'velocity=${velocity.toStringAsFixed(1)} '
+      'droppedLike=$droppedLike '
+      '${DebugBuildStats.snapshot()} '
+      'focus=${_primaryFocusLabel()}',
+    );
   }
 
   static void clear() {
     _lastMotionLine = null;
+    _lastMotionAt = null;
+    _lastRawInset = null;
+    _motionSeq = 0;
     _entries.clear();
-    notifier.value += 1;
+    _scheduleNotify();
   }
 
   static List<String> get entries => List.unmodifiable(_entries);
   static String get allText => _entries.join('\n');
+  static ValueNotifier<int> get notifier => _notifier;
+
+  static void _scheduleNotify() {
+    if (!_notifier.hasExternalListeners) return;
+    if (_notifyScheduled) return;
+    _notifyScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notifyScheduled = false;
+      _notifier.value += 1;
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  static String _primaryFocusLabel() {
+    final primaryFocus = FocusManager.instance.primaryFocus;
+    if (primaryFocus == null) return 'none';
+    return primaryFocus.debugLabel ??
+        primaryFocus.context?.widget.runtimeType.toString() ??
+        'unknown';
+  }
 }
 
 class KeyboardMotionLayer extends StatelessWidget {
@@ -172,6 +312,7 @@ class KeyboardMotionLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    DebugBuildStats.motionBuild += 1;
     final metrics = KeyboardMotionMetrics.fromContext(context);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DebugConsole.logMotion(metrics);
@@ -180,16 +321,19 @@ class KeyboardMotionLayer extends StatelessWidget {
       child: Transform.translate(
         key: const ValueKey('keyboardtest-keyboard-motion-transform'),
         offset: Offset(0, metrics.sheetTranslation),
-        child: Stack(
-          children: [
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SlideUpKeyboardSheet(),
-            ),
-            FloatingKeyboardPill(metrics: metrics),
-          ],
+        child: RepaintBoundary(
+          key: const ValueKey('keyboardtest-motion-repaint-boundary'),
+          child: Stack(
+            children: [
+              const Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: SlideUpKeyboardSheet(),
+              ),
+              FloatingKeyboardPill(metrics: metrics),
+            ],
+          ),
         ),
       ),
     );
@@ -230,34 +374,38 @@ class _SlideUpKeyboardSheetState extends State<SlideUpKeyboardSheet>
 
   @override
   Widget build(BuildContext context) {
+    DebugBuildStats.sheetBuild += 1;
     final height = math.min(MediaQuery.sizeOf(context).height * 0.46, 390.0);
-    return SlideTransition(
-      position: _offset,
-      child: Container(
-        key: const ValueKey('keyboardtest-slide-sheet'),
-        height: height,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x26000000),
-              blurRadius: 20,
-              offset: Offset(0, -4),
-            ),
-          ],
-        ),
-        child: const Column(
-          children: [
-            SizedBox(height: 14),
-            _SheetHandle(),
-            SizedBox(height: 28),
-            Icon(
-              Icons.keyboard_alt_outlined,
-              size: 42,
-              color: Color(0xFF147A73),
-            ),
-          ],
+    return RepaintBoundary(
+      key: const ValueKey('keyboardtest-sheet-repaint-boundary'),
+      child: SlideTransition(
+        position: _offset,
+        child: Container(
+          key: const ValueKey('keyboardtest-slide-sheet'),
+          height: height,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x26000000),
+                blurRadius: 20,
+                offset: Offset(0, -4),
+              ),
+            ],
+          ),
+          child: const Column(
+            children: [
+              SizedBox(height: 14),
+              _SheetHandle(),
+              SizedBox(height: 28),
+              Icon(
+                Icons.keyboard_alt_outlined,
+                size: 42,
+                color: Color(0xFF147A73),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -287,17 +435,48 @@ class FloatingKeyboardPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    DebugBuildStats.pillBuild += 1;
     return Positioned(
       left: 20,
       right: 20,
       bottom: metrics.layerPillBottom,
-      child: const _TextPill(),
+      child: const RepaintBoundary(
+        key: ValueKey('keyboardtest-pill-repaint-boundary'),
+        child: _TextPill(),
+      ),
     );
   }
 }
 
-class _TextPill extends StatelessWidget {
+class _TextPill extends StatefulWidget {
   const _TextPill();
+
+  @override
+  State<_TextPill> createState() => _TextPillState();
+}
+
+class _TextPillState extends State<_TextPill> {
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode(debugLabel: 'keyboardtest-pill-field');
+    _focusNode.addListener(_logFocus);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_logFocus);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _logFocus() {
+    DebugConsole.log(
+      'focus active=${_focusNode.hasFocus} primary=${_focusNode.debugLabel}',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -311,8 +490,11 @@ class _TextPill extends StatelessWidget {
         height: 56,
         child: TextField(
           key: const ValueKey('keyboardtest-pill-field'),
+          focusNode: _focusNode,
           textInputAction: TextInputAction.done,
-          onTap: () => DebugConsole.log('pill focus request'),
+          onTap: () => DebugConsole.log(
+            'pill focus request primary=${_focusNode.debugLabel}',
+          ),
           cursorColor: const Color(0xFF147A73),
           decoration: const InputDecoration(
             border: InputBorder.none,

@@ -37,6 +37,18 @@ void main() {
       find.byKey(const ValueKey('keyboardtest-pill-field')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('keyboardtest-motion-repaint-boundary')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('keyboardtest-sheet-repaint-boundary')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('keyboardtest-pill-repaint-boundary')),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -161,6 +173,9 @@ void main() {
     await tester.pump();
     await tester.pump();
 
+    await tester.tap(find.byKey(const ValueKey('keyboardtest-pill-field')));
+    await tester.pump();
+
     await tester.tap(find.byKey(const ValueKey('debug-floating-button')));
     await tester.pumpAndSettle();
 
@@ -179,5 +194,17 @@ void main() {
     expect(copiedText, contains('lift=236.0'));
     expect(copiedText, contains('sheet=-236.0'));
     expect(copiedText, contains('pill=272.0'));
+    expect(copiedText, contains('seq='));
+    expect(copiedText, contains('dtMs='));
+    expect(copiedText, contains('rawDelta='));
+    expect(copiedText, contains('velocity='));
+    expect(copiedText, contains('droppedLike='));
+    expect(copiedText, contains('builds motion='));
+    expect(copiedText, contains('frameProbe buildMs='));
+    expect(copiedText, contains('rasterMs='));
+    expect(copiedText, contains('totalMs='));
+    expect(copiedText, contains('over16ms='));
+    expect(copiedText, contains('over33ms='));
+    expect(copiedText, contains('focus active=true'));
   });
 }
