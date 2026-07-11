@@ -324,7 +324,8 @@ class DebugPerformanceProbe {
   }
 
   static void _handleTimings(List<FrameTiming> timings) {
-    if (!DebugConsole.detailedCollectionEnabled) return;
+    final measurementWarmupBatch =
+        DebugConsole._consumeMeasurementWarmupBatch();
     for (final timing in timings) {
       _frameSeq += 1;
       final buildMs = _ms(timing.buildDuration);
@@ -367,7 +368,7 @@ class DebugPerformanceProbe {
           latestMotionSequence: DebugConsole.latestMotionSequence,
         ),
         sequence: _frameSeq,
-        warmupFrame: _frameSeq <= 5,
+        warmupFrame: measurementWarmupBatch,
       );
     }
   }
@@ -531,6 +532,12 @@ class DebugConsole {
   static int? _lastVisibleFrameLogUs;
   static var _suppressedFrameLogs = 0;
   static var _worstSuppressedTotalMs = 0.0;
+  static var _measurementWarmupComplete = false;
+  static var _warmupSawOpen = false;
+  static var _warmupTimingBoundaryPending = false;
+  static var _steadyStateSawOpen = false;
+  static var _warmupFrameCount = 0;
+  static var _steadyStateCycleCount = 0;
 
   static bool get detailedCollectionEnabled => _detailedCollectionEnabled;
   static int get latestMotionSequence => _motionSeq;
@@ -563,6 +570,7 @@ class DebugConsole {
     int? transformBuildUs,
     int? postFrameUs,
   }) {
+    _trackMeasurementCycle(metrics);
     if (!_detailedCollectionEnabled) return;
     if (_sameMotion(metrics, _lastMotionMetrics)) return;
     final nowUs = _clock.elapsedMicroseconds;
@@ -623,8 +631,12 @@ class DebugConsole {
     required int sequence,
     required bool warmupFrame,
   }) {
+    if (warmupFrame) {
+      _warmupFrameCount += 1;
+    } else {
+      _frames.add(sample);
+    }
     if (!_detailedCollectionEnabled) return;
-    _frames.add(sample);
     final nowUs = _clock.elapsedMicroseconds;
     final rateLimitUs = DebugPerformanceProbe.frameLogRateLimit.inMicroseconds;
     final lastVisibleFrameLogUs = _lastVisibleFrameLogUs;
@@ -657,7 +669,11 @@ class DebugConsole {
 
   @visibleForTesting
   static void recordFrameForTesting(FrameDiagnosticSample sample) {
-    _logFrame(sample, sequence: 0, warmupFrame: false);
+    _logFrame(
+      sample,
+      sequence: 0,
+      warmupFrame: _consumeMeasurementWarmupBatch(),
+    );
   }
 
   static void clear() {
@@ -671,6 +687,12 @@ class DebugConsole {
     _lastVisibleFrameLogUs = null;
     _suppressedFrameLogs = 0;
     _worstSuppressedTotalMs = 0;
+    _measurementWarmupComplete = false;
+    _warmupSawOpen = false;
+    _warmupTimingBoundaryPending = false;
+    _steadyStateSawOpen = false;
+    _warmupFrameCount = 0;
+    _steadyStateCycleCount = 0;
     _clock
       ..reset()
       ..start();
@@ -687,9 +709,14 @@ class DebugConsole {
 
   static String get allText {
     final text = _samples.formattedText;
-    if (text.isEmpty) return '';
     final summary = PerformanceSummary.fromFrames(_frames);
-    return '$text\n\nPerformanceSummary '
+    final summaryText =
+        'PerformanceSummary '
+        'collectionMode=${_detailedCollectionEnabled ? 'detailed' : 'minimal'} '
+        'warmupComplete=$_measurementWarmupComplete '
+        'warmupFrameCount=$_warmupFrameCount '
+        'steadyStateFrameCount=${summary.frameCount} '
+        'steadyStateCycleCount=$_steadyStateCycleCount '
         'frameCount=${summary.frameCount} '
         'p95BuildMs=${summary.p95BuildMs.toStringAsFixed(1)} '
         'p95RasterMs=${summary.p95RasterMs.toStringAsFixed(1)} '
@@ -698,6 +725,8 @@ class DebugConsole {
         'rasterOverBudgetCount=${summary.rasterOverBudgetCount} '
         'buildOverTwoBudgetsCount=${summary.buildOverTwoBudgetsCount} '
         'rasterOverTwoBudgetsCount=${summary.rasterOverTwoBudgetsCount}';
+    if (text.isEmpty) return summaryText;
+    return '$text\n\n$summaryText';
   }
 
   static String get visibleTailText =>
@@ -738,6 +767,36 @@ class DebugConsole {
     }
     if (metrics.lagPx.abs() > 0.1) return 'catchup';
     return 'settled';
+  }
+
+  static void _trackMeasurementCycle(KeyboardMotionMetrics metrics) {
+    final isOpen = metrics.targetLift > 0.1;
+    final isClosed = metrics.targetLift <= 0.1;
+    if (!_measurementWarmupComplete) {
+      if (isOpen) _warmupSawOpen = true;
+      if (_warmupSawOpen && isClosed) {
+        _measurementWarmupComplete = true;
+        _warmupSawOpen = false;
+        _warmupTimingBoundaryPending = true;
+        _frames.clear();
+      }
+      return;
+    }
+
+    if (isOpen) _steadyStateSawOpen = true;
+    if (_steadyStateSawOpen && isClosed) {
+      _steadyStateSawOpen = false;
+      _steadyStateCycleCount += 1;
+    }
+  }
+
+  static bool _consumeMeasurementWarmupBatch() {
+    if (!_measurementWarmupComplete) return true;
+    if (_warmupTimingBoundaryPending) {
+      _warmupTimingBoundaryPending = false;
+      return true;
+    }
+    return false;
   }
 
   static bool _sameMotion(

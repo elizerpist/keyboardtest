@@ -473,6 +473,26 @@ void main() {
     DebugConsole.clear();
     addTearDown(DebugConsole.clear);
 
+    DebugConsole.logMotion(
+      const KeyboardMotionMetrics(rawInset: 332, safeBottom: 24, spacing: 12),
+    );
+    DebugConsole.logMotion(
+      const KeyboardMotionMetrics(rawInset: 0, safeBottom: 24, spacing: 12),
+    );
+    DebugConsole.recordFrameForTesting(
+      const FrameDiagnosticSample(
+        buildMs: 1,
+        rasterMs: 1,
+        totalSpanMs: 1,
+        vsyncOverheadMs: 1,
+        vsyncDeltaMs: 16.7,
+        refreshRate: 60,
+        budgetMs: 16.7,
+        frameNumber: -1,
+        latestMotionSequence: 0,
+      ),
+    );
+
     for (var index = 0; index <= 500; index += 1) {
       DebugConsole.recordFrameForTesting(
         FrameDiagnosticSample(
@@ -491,6 +511,78 @@ void main() {
 
     expect(DebugConsole.allText, contains('frameCount=500'));
   });
+
+  testWidgets(
+    'minimal collection excludes the first keyboard cycle from its summary',
+    (tester) async {
+      await tester.pumpWidget(const KeyboardTestApp());
+      await tester.pumpAndSettle();
+      DebugConsole.clear();
+      DebugConsole.setDetailedCollectionEnabled(false);
+      addTearDown(() {
+        DebugConsole.setDetailedCollectionEnabled(true);
+        DebugConsole.clear();
+      });
+
+      var notifications = 0;
+      void listener() => notifications += 1;
+      DebugConsole.notifier.addListener(listener);
+      addTearDown(() => DebugConsole.notifier.removeListener(listener));
+
+      FrameDiagnosticSample frame(int number) => FrameDiagnosticSample(
+        buildMs: 3,
+        rasterMs: 4,
+        totalSpanMs: 12,
+        vsyncOverheadMs: 1,
+        vsyncDeltaMs: 16.7,
+        refreshRate: 60,
+        budgetMs: 16.7,
+        frameNumber: number,
+        latestMotionSequence: 0,
+      );
+
+      const open = KeyboardMotionMetrics(
+        rawInset: 332,
+        safeBottom: 24,
+        spacing: 12,
+      );
+      const closed = KeyboardMotionMetrics(
+        rawInset: 0,
+        safeBottom: 24,
+        spacing: 12,
+      );
+
+      DebugConsole.logMotion(open);
+      DebugConsole.recordFrameForTesting(frame(1));
+      DebugConsole.logMotion(closed);
+      DebugConsole.recordFrameForTesting(frame(2));
+      DebugConsole.recordFrameForTesting(frame(3));
+      await tester.idle();
+
+      var report = DebugConsole.allText;
+      expect(report, contains('collectionMode=minimal'));
+      expect(report, contains('warmupComplete=true'));
+      expect(report, contains('warmupFrameCount=2'));
+      expect(report, contains('steadyStateFrameCount=1'));
+      expect(report, contains('steadyStateCycleCount=0'));
+      expect(report, contains('frameCount=1'));
+      expect(report, isNot(contains('motion seq=')));
+      expect(report, isNot(contains('frame frameNumber=')));
+      expect(notifications, 0);
+
+      DebugConsole.logMotion(open);
+      DebugConsole.logMotion(closed);
+      report = DebugConsole.allText;
+      expect(report, contains('steadyStateCycleCount=1'));
+
+      DebugConsole.clear();
+      report = DebugConsole.allText;
+      expect(report, contains('warmupComplete=false'));
+      expect(report, contains('warmupFrameCount=0'));
+      expect(report, contains('steadyStateFrameCount=0'));
+      expect(report, contains('steadyStateCycleCount=0'));
+    },
+  );
 
   testWidgets('debug dialog exposes a focus-neutral collection switch', (
     tester,
