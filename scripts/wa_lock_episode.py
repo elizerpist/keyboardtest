@@ -18,6 +18,11 @@ def matching_overlay(dump):
                for block in blocks)
 
 
+def screen_asleep(dump):
+    return (re.search(r'mWakefulness=(?:Asleep|Dozing)\b', dump) is not None
+            and 'mWakefulnessChanging=false' in dump)
+
+
 def service_connected(dump):
     enabled = re.search(r'Enabled services:[^\n]*' + re.escape(SERVICE), dump, re.I)
     bound = re.search(r'Bound services:[^\n]*Service\[label=keyboardtest · WA,', dump, re.I)
@@ -44,11 +49,22 @@ def lock_episode(adb, wait_node, tap, widget_id):
         adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
         (EVIDENCE / 'before-lock-activities.txt').write_text(adb('shell', 'dumpsys', 'activity', 'activities'))
         adb('shell', 'input', 'keyevent', 'KEYCODE_SLEEP')
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            power = adb('shell', 'dumpsys', 'power')
+            (EVIDENCE / 'power-before-wake.txt').write_text(power)
+            if screen_asleep(power):
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError('Emulator did not finish going to sleep')
+        (EVIDENCE / 'sleep-policy.txt').write_text(adb('shell', 'dumpsys', 'window', 'policy'))
         adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP')
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             windows = adb('shell', 'dumpsys', 'window', 'windows')
             (EVIDENCE / 'lock-windows.txt').write_text(windows)
+            (EVIDENCE / 'keyguard-policy.txt').write_text(adb('shell', 'dumpsys', 'window', 'policy'))
             if matching_overlay(windows):
                 break
             time.sleep(0.5)
@@ -67,6 +83,7 @@ def lock_episode(adb, wait_node, tap, widget_id):
         failure = error
     finally:
         # The emulator has no credential; this returns to the unlocked setup screen.
+        adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP', check=False)
         adb('shell', 'input', 'swipe', '160', '600', '160', '100', '300', check=False)
         adb('shell', 'input', 'keyevent', 'KEYCODE_MENU', check=False)
         adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/tk.zwander.lockscreenwidgets.lab.KeyboardLabActivity', check=False)

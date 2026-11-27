@@ -1,13 +1,19 @@
 import unittest
 import xml.etree.ElementTree as ET
 from wa_emulator_ui import find_node
-from wa_lock_episode import SERVICE, matching_overlay, service_connected
+from wa_lock_episode import SERVICE, matching_overlay, screen_asleep, service_connected
 
 
 class EmulatorUiLookupTest(unittest.TestCase):
     def test_dialog_buttons_are_selected_by_system_id(self):
         root = ET.fromstring('<hierarchy><node text="Always allow" resource-id="android:id/alwaysUse" /><node text="Create" resource-id="android:id/button1" /></hierarchy>')
         self.assertEqual(find_node(root, ('android:id/button1',)).get('text'), 'Create')
+
+    def test_waits_for_sleep_transition_to_finish(self):
+        self.assertFalse(screen_asleep('mWakefulness=Dozing\nmWakefulnessChanging=true'))
+        self.assertTrue(screen_asleep('mWakefulness=Dozing\nmWakefulnessChanging=false'))
+        self.assertTrue(screen_asleep('mWakefulness=Asleep\nmWakefulnessChanging=false'))
+        self.assertFalse(screen_asleep('mWakefulness=Awake\nmWakefulnessChanging=false'))
 
     def test_service_requires_enabled_component_and_bound_label(self):
         dump = 'Bound services:{Service[label=keyboardtest · WA, feedbackType[FEEDBACK_GENERIC]]}\nEnabled services:{{' + SERVICE + '}}'
