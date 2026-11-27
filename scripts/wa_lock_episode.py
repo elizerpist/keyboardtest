@@ -34,6 +34,40 @@ def service_connected(dump):
     return enabled is not None and bound is not None
 
 
+def wake_to_overlay(adb, prefix):
+    adb('shell', 'input', 'keyevent', 'KEYCODE_SLEEP')
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        power = adb('shell', 'dumpsys', 'power')
+        (EVIDENCE / f'{prefix}-power-before-wake.txt').write_text(power)
+        if screen_asleep(power):
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError('Emulator did not finish going to sleep')
+    (EVIDENCE / f'{prefix}-sleep-policy.txt').write_text(adb('shell', 'dumpsys', 'window', 'policy'))
+    adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP')
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        policy = adb('shell', 'dumpsys', 'window', 'policy')
+        (EVIDENCE / f'{prefix}-keyguard-policy.txt').write_text(policy)
+        if keyguard_shown(policy):
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError('Emulator keyguard did not become visible after wake')
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        windows = adb('shell', 'dumpsys', 'window', 'windows')
+        (EVIDENCE / f'{prefix}-lock-windows.txt').write_text(windows)
+        (EVIDENCE / f'{prefix}-keyguard-policy.txt').write_text(adb('shell', 'dumpsys', 'window', 'policy'))
+        if matching_overlay(windows):
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError('WA accessibility overlay was not attached on emulator keyguard')
+
+
 def lock_episode(adb, wait_node, tap, widget_id):
     tap(wait_node('Rögzítés indítása'))
     # The service grant is injected only in the disposable CI emulator.
@@ -55,37 +89,7 @@ def lock_episode(adb, wait_node, tap, widget_id):
         (EVIDENCE / 'locksettings.txt').write_text(adb('shell', 'locksettings', 'get-disabled'))
         adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
         (EVIDENCE / 'before-lock-activities.txt').write_text(adb('shell', 'dumpsys', 'activity', 'activities'))
-        adb('shell', 'input', 'keyevent', 'KEYCODE_SLEEP')
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            power = adb('shell', 'dumpsys', 'power')
-            (EVIDENCE / 'power-before-wake.txt').write_text(power)
-            if screen_asleep(power):
-                break
-            time.sleep(0.5)
-        else:
-            raise AssertionError('Emulator did not finish going to sleep')
-        (EVIDENCE / 'sleep-policy.txt').write_text(adb('shell', 'dumpsys', 'window', 'policy'))
-        adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP')
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            policy = adb('shell', 'dumpsys', 'window', 'policy')
-            (EVIDENCE / 'keyguard-policy.txt').write_text(policy)
-            if keyguard_shown(policy):
-                break
-            time.sleep(0.5)
-        else:
-            raise AssertionError('Emulator keyguard did not become visible after wake')
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            windows = adb('shell', 'dumpsys', 'window', 'windows')
-            (EVIDENCE / 'lock-windows.txt').write_text(windows)
-            (EVIDENCE / 'keyguard-policy.txt').write_text(adb('shell', 'dumpsys', 'window', 'policy'))
-            if matching_overlay(windows):
-                break
-            time.sleep(0.5)
-        else:
-            raise AssertionError('WA accessibility overlay was not attached on emulator keyguard')
+        wake_to_overlay(adb, 'first')
         screenshot = subprocess.run(['adb', 'exec-out', 'screencap', '-p'], check=True, capture_output=True, timeout=20).stdout
         (EVIDENCE / 'live-lockscreen.png').write_bytes(screenshot)
         size = adb('shell', 'wm', 'size')
@@ -95,6 +99,20 @@ def lock_episode(adb, wait_node, tap, widget_id):
         width, height = map(int, match.groups())
         x, y = width // 2, height // 2
         adb('shell', 'input', 'swipe', str(x), str(y), str(x + 25), str(y), '2500')
+        adb('shell', 'input', 'swipe', str(x), str(height - 40), str(x), '100', '300')
+        adb('shell', 'input', 'keyevent', 'KEYCODE_MENU')
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            policy = adb('shell', 'dumpsys', 'window', 'policy')
+            windows = adb('shell', 'dumpsys', 'window', 'windows')
+            if not keyguard_shown(policy) and not matching_overlay(windows):
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError('WA overlay remained after emulator unlock')
+        wake_to_overlay(adb, 'relock')
+        screenshot = subprocess.run(['adb', 'exec-out', 'screencap', '-p'], check=True, capture_output=True, timeout=20).stdout
+        (EVIDENCE / 'relocked-position.png').write_bytes(screenshot)
     except Exception as error:
         failure = error
     finally:
@@ -127,6 +145,13 @@ def lock_episode(adb, wait_node, tap, widget_id):
     required = {'HOST_VIEW', 'FIRST_DRAW', 'WINDOW_ATTACHED', 'WINDOW_REMOVED', 'DRAG_START', 'DRAG_DROP'}
     if not required.issubset(events):
         raise AssertionError('Missing live WA events: ' + ', '.join(sorted(required - events)))
+    start = next(row for row in rows if row['event'] == 'DRAG_START' and row['widgetId'] == int(widget_id))
+    drop = next(row for row in rows if row['event'] == 'DRAG_DROP' and row['widgetId'] == int(widget_id))
+    if abs((drop['x'] - start['x']) - 25) > 2 or abs(drop['y'] - start['y']) > 2:
+        raise AssertionError('Frame movement did not match the injected screen delta')
+    restored = [row for row in rows if row['event'] == 'RESTORE' and row['seq'] > drop['seq']]
+    if not restored or (restored[-1]['x'], restored[-1]['y']) != (drop['x'], drop['y']):
+        raise AssertionError('Frame position was not restored after relocking')
     if not any(row['event'] == 'VISIBILITY' and row['flags'] & 2 and row['flags'] & (1 << 20) for row in rows):
         raise AssertionError('No allowed keyguard visibility decision was recorded')
-    (EVIDENCE / 'lock-episode.txt').write_text('Emulator-only injected accessibility grant; real WA overlay, host draw and single-pointer drag recorded.\n')
+    (EVIDENCE / 'lock-episode.txt').write_text('Emulator-only injected accessibility grant; real WA overlay, host draw, single-pointer drag and relock restore recorded.\n')
