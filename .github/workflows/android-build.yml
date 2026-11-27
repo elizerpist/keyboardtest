@@ -92,6 +92,7 @@ jobs:
       - name: Flutter regression and module checks
         run: |
           flutter --version
+          python3 -m unittest discover -s scripts -p 'test_wa_*.py'
           flutter pub get
           (cd integrations/keyboardtest_module && flutter pub get)
           flutter analyze
