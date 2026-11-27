@@ -87,6 +87,7 @@ jobs:
         run: |
           flutter --version
           flutter pub get
+          (cd integrations/keyboardtest_module && flutter pub get)
           flutter analyze
           flutter test
           cd integrations/keyboardtest_module
