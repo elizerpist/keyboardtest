@@ -18,6 +18,12 @@ def matching_overlay(dump):
                for block in blocks)
 
 
+def service_connected(dump):
+    enabled = re.search(r'Enabled services:[^\n]*' + re.escape(SERVICE), dump, re.I)
+    bound = re.search(r'Bound services:[^\n]*Service\[label=keyboardtest · WA,', dump, re.I)
+    return enabled is not None and bound is not None
+
+
 def lock_episode(adb, wait_node, tap, widget_id):
     tap(wait_node('Rögzítés indítása'))
     # The service grant is injected only in the disposable CI emulator.
@@ -27,7 +33,7 @@ def lock_episode(adb, wait_node, tap, widget_id):
     while time.monotonic() < deadline:
         state = adb('shell', 'dumpsys', 'accessibility')
         (EVIDENCE / 'accessibility.txt').write_text(state)
-        if re.search(r'(?:Bound services|mBoundServices)[^\n]*' + re.escape(SERVICE), state, re.I):
+        if service_connected(state):
             break
         time.sleep(0.5)
     else:

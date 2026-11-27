@@ -1,13 +1,19 @@
 import unittest
 import xml.etree.ElementTree as ET
 from wa_emulator_ui import find_node
-from wa_lock_episode import matching_overlay
+from wa_lock_episode import SERVICE, matching_overlay, service_connected
 
 
 class EmulatorUiLookupTest(unittest.TestCase):
     def test_dialog_buttons_are_selected_by_system_id(self):
         root = ET.fromstring('<hierarchy><node text="Always allow" resource-id="android:id/alwaysUse" /><node text="Create" resource-id="android:id/button1" /></hierarchy>')
         self.assertEqual(find_node(root, ('android:id/button1',)).get('text'), 'Create')
+
+    def test_service_requires_enabled_component_and_bound_label(self):
+        dump = 'Bound services:{Service[label=keyboardtest · WA, feedbackType[FEEDBACK_GENERIC]]}\nEnabled services:{{' + SERVICE + '}}'
+        self.assertTrue(service_connected(dump))
+        self.assertFalse(service_connected(dump.replace(SERVICE, 'com.other/.Service')))
+        self.assertFalse(service_connected(dump.replace('keyboardtest · WA', 'Other app')))
 
     def test_overlay_requires_wa_package_and_accessibility_type(self):
         self.assertTrue(matching_overlay('  Window #0 Window{abc}:\n  package=com.example.keyboardtest.walab ty=ACCESSIBILITY_OVERLAY'))
