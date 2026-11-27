@@ -53,10 +53,10 @@ def main():
         wait_node('Zárképernyő teszt ·')
         tap(wait_node('Zárképernyős tesztwidget'))
         tap(wait_node('Tesztwidget hozzáadása'))
-        tap(wait_node('CANCEL', 'Cancel', 'android:id/button2'))
+        tap(wait_node('android:id/button2'))
         wait_node('Kötött widget ID: nincs')
         tap(wait_node('Tesztwidget hozzáadása'))
-        tap(wait_node('ALLOW', 'Allow', 'android:id/button1'))
+        tap(wait_node('android:id/button1'))
         deadline = time.monotonic() + 25
         widget_id = None
         while time.monotonic() < deadline:

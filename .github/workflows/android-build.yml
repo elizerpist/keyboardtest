@@ -83,6 +83,9 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Restore Flutter profile AAR
         id: flutter-aar
         uses: actions/cache/restore@v4
