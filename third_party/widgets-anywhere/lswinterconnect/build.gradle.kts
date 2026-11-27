@@ -20,6 +20,7 @@ android {
     }
 
     defaultConfig {
+        manifestPlaceholders["wallpaperPermission"] = if (providers.gradleProperty("waLab").orNull == "true") "com.example.keyboardtest.walab.WALLPAPER_INTERCONNECT" else "tk.zwander.lockscreenwidgets.WALLPAPER_INTERCONNECT"
         minSdk = minSdkVersion
         lint.targetSdk = targetSdkVersion
     }

@@ -45,6 +45,7 @@ fun BaseDelegate.BaseViewModel<*, *>.WidgetItemLayout(
     widgetData: WidgetData,
     widgetContents: @Composable (Modifier) -> Unit,
     cornerRadiusKey: String,
+    cornerRadiusOverride: androidx.compose.ui.unit.Dp? = null,
     ignoreTouchesKey: Pair<String, SharedPreferences>?,
     doubleTapTurnOffKey: String?,
     launchIconOverride: () -> Unit,
@@ -69,7 +70,7 @@ fun BaseDelegate.BaseViewModel<*, *>.WidgetItemLayout(
             ) / 10f).dp
         },
     )
-    val animatedCornerRadius by animateDpAsState(widgetCornerRadius)
+    val animatedCornerRadius by animateDpAsState(cornerRadiusOverride ?: widgetCornerRadius)
     val ignoreTouches by ignoreTouchesKey?.let {
         rememberBooleanPreferenceState(
             ignoreTouchesKey.first,

@@ -5,6 +5,8 @@ import android.content.Context
 import dev.zwander.lswinterconnect.safeApplicationContext
 import tk.zwander.common.host.widgetHostCompat
 import tk.zwander.lockscreenwidgets.util.FramePrefs
+import tk.zwander.lockscreenwidgets.BuildConfig
+import tk.zwander.lockscreenwidgets.lab.LabState
 
 val Context.idManager: IDManager
     get() = IDManager.getInstance(this)
@@ -54,7 +56,8 @@ class IDManager private constructor(private val context: Context) {
     }
 
     fun collectAllIds(): List<Int> {
-        return context.prefManager.shortcutIds.map { it.toInt() } +
+        return (if (BuildConfig.WA_LAB) listOf(LabState.pendingId(context)).filter { it >= 0 } else emptyList()) +
+                context.prefManager.shortcutIds.map { it.toInt() } +
                 context.prefManager.currentWidgets.map { it.id } +
                 context.prefManager.drawerWidgets.map { it.id } +
                 context.prefManager.widgetStackWidgets.flatMap { entry -> [entry.key] + entry.value.map { it.id } } +

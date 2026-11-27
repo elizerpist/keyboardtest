@@ -19,6 +19,10 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         mavenLocal()
+        if (providers.gradleProperty("waLab").orNull == "true") {
+            maven { url = uri("../../integrations/keyboardtest_module/build/host/outputs/repo") }
+            maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
+        }
         maven("https://jitpack.io")
     }
 }

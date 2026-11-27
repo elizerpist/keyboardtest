@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.motionEventSpy
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
@@ -39,11 +41,13 @@ import tk.zwander.common.compose.components.*
 import tk.zwander.common.compose.util.rememberBooleanPreferenceState
 import tk.zwander.common.compose.util.rememberPreferenceState
 import tk.zwander.common.util.*
+import tk.zwander.lockscreenwidgets.lab.LabState
 import tk.zwander.lockscreenwidgets.R
 import tk.zwander.lockscreenwidgets.activities.ComposeFrameSettingsActivity
 import tk.zwander.lockscreenwidgets.util.FramePrefs
 import tk.zwander.lockscreenwidgets.util.WidgetFrameDelegate
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun WidgetFrameDelegate.WidgetFrameViewModel.WidgetFrameLayout(
     removeWidgetConfirmed: (Boolean, Int?) -> Unit,
@@ -58,6 +62,8 @@ fun WidgetFrameDelegate.WidgetFrameViewModel.WidgetFrameLayout(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val frameState by state.collectAsState()
+    val liveLab = LabState.isEnrolledFrame(context, holderId) && LabState.requested(context) && !frameState.isPreview
     val resources = LocalResources.current
     val frameCornerRadius by rememberPreferenceState(
         key = PrefManager.KEY_FRAME_CORNER_RADIUS,
@@ -123,8 +129,13 @@ fun WidgetFrameDelegate.WidgetFrameViewModel.WidgetFrameLayout(
         resetKey = display?.uniqueIdCompat,
     )
 
+    DisposableEffect(liveLab) {
+        onDispose { if (liveLab) cancelLabTouch() }
+    }
+    val labInput = if (liveLab) Modifier.pointerInteropFilter { labTouch(it) } else Modifier
     Card(
         modifier = modifier
+            .then(labInput)
             .pointerInput(Unit) {
                 interceptOutOfBoundsChildEvents = true
                 awaitPointerEventScope {
@@ -189,7 +200,7 @@ fun WidgetFrameDelegate.WidgetFrameViewModel.WidgetFrameLayout(
                     }
                 }
             },
-        shape = RoundedCornerShape(size = frameCornerRadius),
+        shape = RoundedCornerShape(size = if (liveLab) 0.dp else frameCornerRadius),
         elevation = CardDefaults.outlinedCardElevation(),
         colors = CardDefaults.cardColors().copy(
             containerColor = animatedBackgroundColor,
@@ -255,16 +266,16 @@ fun WidgetFrameDelegate.WidgetFrameViewModel.WidgetFrameLayout(
                 modifier = Modifier.zIndex(1f),
                 enter = fadeIn(),
                 exit = fadeOut(),
-                visible = !firstViewing,
+                visible = !firstViewing || liveLab,
             ) {
                 GridWrapper(modifier = Modifier.fillMaxSize())
             }
 
-            HintIntroLayout(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(2f),
-            )
+            if (!liveLab) {
+                HintIntroLayout(
+                    modifier = Modifier.fillMaxSize().zIndex(2f),
+                )
+            }
 
             androidx.compose.animation.AnimatedVisibility(
                 visible = itemToRemove != null,

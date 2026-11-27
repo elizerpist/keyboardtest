@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import tk.zwander.common.host.widgetHostCompat
 import tk.zwander.common.util.*
+import tk.zwander.lockscreenwidgets.lab.LabDiagnostics
+import tk.zwander.lockscreenwidgets.lab.LabState
 import tk.zwander.lockscreenwidgets.App
 import java.util.concurrent.ConcurrentHashMap
 
@@ -38,7 +40,7 @@ class WidgetViewCacheRegistry private constructor(@Suppress("unused") private va
         startListeningIfNeeded()
         context.appWidgetInfoCache[appWidgetId] = appWidget
 
-        return cachedViews.getOrPut(appWidgetId) {
+        val hostView = cachedViews.getOrPut(appWidgetId) {
             val widgetContext = try {
                 RemoteViewsLayoutInflaterContext(
                     context.safeApplicationContext.createContextAsUser(
@@ -63,6 +65,22 @@ class WidgetViewCacheRegistry private constructor(@Suppress("unused") private va
                 widgetContext ?: context, appWidgetId, appWidget,
             )
         }.andRemoveFromParent()
+        if (LabDiagnostics.isRecording() && appWidgetId == LabState.enrolledId(context) &&
+            appWidget.provider == LabState.provider(context) && hostView.appWidgetId == appWidgetId) {
+            LabDiagnostics.record(context, LabDiagnostics.Event.HOST_VIEW, appWidgetId)
+            val observer = hostView.viewTreeObserver
+            val listener = object : android.view.ViewTreeObserver.OnDrawListener {
+                private var recorded = false
+                override fun onDraw() {
+                    if (recorded) return
+                    recorded = true
+                    LabDiagnostics.record(context, LabDiagnostics.Event.FIRST_DRAW, appWidgetId)
+                    hostView.post { if (observer.isAlive) observer.removeOnDrawListener(this) }
+                }
+            }
+            observer.addOnDrawListener(listener)
+        }
+        return hostView
     }
 
     fun removeView(appWidgetId: Int) {

@@ -9,18 +9,18 @@
         android:supportsRtl="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:name=".App">
-        <activity android:name=".PermissionRequestActivity"
+        android:name="dev.zwander.lswwallpaper.App">
+        <activity android:name="dev.zwander.lswwallpaper.PermissionRequestActivity"
             android:enabled="true"
             android:exported="false"
             android:theme="@style/AppTheme.Null"
             />
 
         <service
-            android:name=".WallpaperServerService"
+            android:name="dev.zwander.lswwallpaper.WallpaperServerService"
             android:enabled="true"
             android:exported="true"
-            android:permission="tk.zwander.lockscreenwidgets.WALLPAPER_INTERCONNECT"
+            android:permission="${wallpaperPermission}"
             android:foregroundServiceType="specialUse"
             />
     </application>

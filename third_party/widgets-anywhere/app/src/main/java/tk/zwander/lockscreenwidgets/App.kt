@@ -138,7 +138,7 @@ class App : Application(), CoroutineScope by scope {
     }
 
     init {
-        BugsnagPerformance.reportApplicationClassLoaded()
+        if (!BuildConfig.WA_LAB) BugsnagPerformance.reportApplicationClassLoaded()
     }
 
     private external fun setUpAborter()
@@ -153,7 +153,7 @@ class App : Application(), CoroutineScope by scope {
 
         instance = this
 
-        if (prefManager.enableBugsnag) {
+        if (!BuildConfig.WA_LAB && prefManager.enableBugsnag) {
             ReLinker.loadLibrary(this, "bugsnag-ndk")
             ReLinker.loadLibrary(this, "bugsnag-plugin-android-anr")
             ReLinker.loadLibrary(this, "lockscreenwidgets")
@@ -298,7 +298,8 @@ class App : Application(), CoroutineScope by scope {
         LogUtils.createInstance(
             context = this,
             isDebug = { isDebug },
-            writeToFile = true,
+            writeToFile = !BuildConfig.WA_LAB,
+            enabled = !BuildConfig.WA_LAB,
         )
         logUtils.logPreviousExitReasons()
         migrationManager.runMigrations()
@@ -425,18 +426,14 @@ class App : Application(), CoroutineScope by scope {
         }
 
         val idManager = idManager
-        val currentIds = idManager.collectAllIds()
-        @SuppressLint("NewApi")
-        widgetsToDelete.addAll(
-            widgetHostCompat.appWidgetIds.filterNot { id ->
-                currentIds.contains(id)
-            },
-        )
-
-        logUtils.debugLog("Found widgets $widgetsToDelete not in any widget lists", null)
-
-        widgetsToDelete.forEach {
-            idManager.removeId(it)
+        synchronized(idManager) {
+            val currentIds = idManager.collectAllIds()
+            @SuppressLint("NewApi")
+            widgetsToDelete.addAll(
+                widgetHostCompat.appWidgetIds.filterNot { id -> currentIds.contains(id) },
+            )
+            logUtils.debugLog("Found widgets $widgetsToDelete not in any widget lists", null)
+            widgetsToDelete.filterNot { it in currentIds }.forEach { idManager.removeId(it) }
         }
     }
 

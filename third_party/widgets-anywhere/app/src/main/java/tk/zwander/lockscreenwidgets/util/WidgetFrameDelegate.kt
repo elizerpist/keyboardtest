@@ -4,6 +4,7 @@ import android.app.WallpaperManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.*
+import android.os.Build
 import android.view.*
 import androidx.compose.animation.*
 import androidx.compose.foundation.gestures.Orientation
@@ -42,6 +43,11 @@ import tk.zwander.common.data.provider.IFramePrefsProvider
 import tk.zwander.common.data.provider.IFrameProvider
 import tk.zwander.common.listeners.WidgetResizeListener
 import tk.zwander.common.util.*
+import tk.zwander.lockscreenwidgets.BuildConfig
+import tk.zwander.lockscreenwidgets.lab.LabState
+import tk.zwander.lockscreenwidgets.lab.LabDiagnostics
+import tk.zwander.lockscreenwidgets.lab.LabDragDetector
+import tk.zwander.lockscreenwidgets.lab.LabFrameBounds
 import tk.zwander.lockscreenwidgets.R
 import tk.zwander.lockscreenwidgets.activities.add.AddFrameWidgetActivity
 import tk.zwander.lockscreenwidgets.activities.add.ReconfigureFrameWidgetActivity
@@ -205,6 +211,84 @@ open class WidgetFrameDelegate protected constructor(
         }
     }
 
+    private var labLastVisibility: Int? = null
+    private var labWasRecording = false
+    private fun recordLabVisibility(flags: Int) {
+        val recording = LabDiagnostics.isRecording()
+        if (recording && (!labWasRecording || labLastVisibility != flags)) {
+            LabDiagnostics.record(this, LabDiagnostics.Event.VISIBILITY, LabState.enrolledId(this), flags)
+        }
+        labWasRecording = recording
+        labLastVisibility = flags
+    }
+
+    private var labMoveOrigin: Point? = null
+    private var labMovePosition: Point? = null
+    private var labMoveMode: FrameSizeAndPosition.FrameType? = null
+    private val labDrag by lazy {
+        LabDragDetector(this, ::beginLabMove, ::moveLabFrame, ::finishLabMove)
+    }
+
+    private fun applyFramePosition(x: Int, y: Int, commit: Boolean) {
+        params.x = x
+        params.y = y
+        wm?.safeUpdateViewLayout(rootView, params)
+        if (commit) frameSizeAndPosition.setPositionForType(saveMode, Point(x, y))
+    }
+
+    private fun safeInsets(): IntArray {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return intArrayOf(0, 0, 0, 0)
+        val insets = wm?.currentWindowMetrics?.windowInsets?.getInsetsIgnoringVisibility(
+            android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout(),
+        ) ?: return intArrayOf(0, 0, 0, 0)
+        return intArrayOf(insets.left, insets.top, insets.right, insets.bottom)
+    }
+
+    private fun clampLabPosition(x: Int, y: Int, display: LSDisplay): Point {
+        val insets = safeInsets()
+        val size = display.rotatedRealSize
+        return Point(
+            LabFrameBounds.clamp(x, size.x, params.width, insets[0], insets[2]),
+            LabFrameBounds.clamp(y, size.y, params.height, insets[1], insets[3]),
+        )
+    }
+
+    private fun beginLabMove(): Boolean {
+        if (!rootView.isAttachedToWindow || !canShow() || !LabState.requested(this) ||
+            !LabState.isEnrolledFrame(this, id)) return false
+        labMoveOrigin = Point(params.x, params.y)
+        labMovePosition = Point(params.x, params.y)
+        labMoveMode = saveMode
+        LabDiagnostics.record(this, LabDiagnostics.Event.DRAG_START, LabState.enrolledId(this), x = params.x, y = params.y)
+        return true
+    }
+
+    private fun moveLabFrame(dx: Float, dy: Float) {
+        val origin = labMoveOrigin ?: return
+        val display = display ?: return
+        if (!canShow() || labMoveMode != saveMode) { labDrag.cancel(); return }
+        val point = clampLabPosition(origin.x + dx.toInt(), origin.y + dy.toInt(), display)
+        labMovePosition = point
+        applyFramePosition(point.x, point.y, false)
+    }
+
+    private fun finishLabMove(commit: Boolean) {
+        val origin = labMoveOrigin ?: return
+        val mode = labMoveMode
+        val point = if (commit) labMovePosition ?: origin else origin
+        labMoveOrigin = null
+        labMovePosition = null
+        labMoveMode = null
+        if (rootView.isAttachedToWindow) applyFramePosition(point.x, point.y, false)
+        if (commit && mode != null && canShow()) {
+            frameSizeAndPosition.setPositionForType(mode, point)
+            LabDiagnostics.record(this, LabDiagnostics.Event.DRAG_DROP, LabState.enrolledId(this), x = point.x, y = point.y)
+            lifecycleScope.launch { updateWallpaperLayerIfNeeded() }
+        } else {
+            LabDiagnostics.record(this, LabDiagnostics.Event.DRAG_CANCEL, LabState.enrolledId(this), x = origin.x, y = origin.y)
+        }
+    }
+
     private val animationMutex = Mutex()
 
     private var pendingShowJob: Job? = null
@@ -226,15 +310,7 @@ open class WidgetFrameDelegate protected constructor(
                 },
                 frameMoved = { velX, velY ->
                     lifecycleScope.launch {
-                        params.x += velX.toInt()
-                        params.y += velY.toInt()
-
-                        updateOverlay()
-
-                        frameSizeAndPosition.setPositionForType(
-                            saveMode,
-                            Point(params.x, params.y),
-                        )
+                        applyFramePosition(params.x + velX.toInt(), params.y + velY.toInt(), true)
                     }
                 },
                 frameResized = { which, velocity, isUp ->
@@ -340,7 +416,7 @@ open class WidgetFrameDelegate protected constructor(
         ) {
             viewModel.currentEditingInterfaceId.value = null
         }
-        handler(PrefManager.KEY_WIDGET_FRAME_ENABLED) {
+        handler(PrefManager.KEY_WIDGET_FRAME_ENABLED, LabState.KEY_REQUESTED) {
             lifecycleScope.launch {
                 updateState {
                     it.copy(isPreview = false)
@@ -666,6 +742,7 @@ open class WidgetFrameDelegate protected constructor(
     }
 
     suspend fun updateWindowState(updateAccessibility: Boolean = false) {
+        if (BuildConfig.WA_LAB && id == ID && (!LabState.isEnrolledFrame(this, id) || !canShow())) labDrag.cancel()
         if (canShow()) {
             pendingShowJob?.cancel()
 
@@ -738,6 +815,10 @@ open class WidgetFrameDelegate protected constructor(
      * =======
      */
     private fun canShow(): Boolean {
+        if (LabState.isEnrolledFrame(context, id) && !LabState.requested(context)) {
+            recordLabVisibility(0)
+            return false
+        }
         val [displayId, uniqueIdCompat] = this@WidgetFrameDelegate.display?.let {
             it.displayId to it.uniqueIdCompat
         } ?: (null to null)
@@ -828,6 +909,15 @@ open class WidgetFrameDelegate protected constructor(
         }
 
         return (forced() || forSecondaryDisplay() || forPreview() || forNotificationCenter() || forLockscreen()).also {
+            if (LabState.isEnrolledFrame(context, id)) {
+                val flags = listOf(isDisplayOn, wasOnKeyguard, isDefaultDisplay, showOnMainLockScreen,
+                    hasAppLayer, showingNotificationsPanel, showingSecurityInput, hasNotifications,
+                    widgetFrameEnabled, canShowFromTasker, isTempHide, hidingForPresentIds,
+                    hidingForNonPresentIds, isPortrait, showingKeyboard, isOnEdgePanel, isOnFaceWidgets,
+                    isOnScreenOffMemo, hidingForPresentApp, showingPowerMenu, it)
+                    .foldIndexed(0) { index, bits, value -> if (value) bits or (1 shl index) else bits }
+                recordLabVisibility(flags)
+            }
             logUtils.debugLog(
                 message = { "canShow $id: $it" },
                 debugMessage = {
@@ -965,14 +1055,27 @@ open class WidgetFrameDelegate protected constructor(
             null,
         )
 
-        val [newX, newY] = frameSizeAndPosition.getPositionForType(saveMode, display)
-        val [newW, newH] = frameSizeAndPosition.getSizeForType(saveMode, display).run {
+        val savedPosition = labMovePosition ?: frameSizeAndPosition.getPositionForType(saveMode, display)
+        val [rawW, rawH] = frameSizeAndPosition.getSizeForType(saveMode, display).run {
             Point(
                 clampFrameWidth(display.dpToPx(x), display),
                 clampFrameHeight(display.dpToPx(y), display),
             )
         }
 
+        val isLab = LabState.isEnrolledFrame(this, id) && !state.value.isPreview
+        val insets = if (isLab) safeInsets() else intArrayOf(0, 0, 0, 0)
+        val maxSquare = minOf(display.rotatedRealSize.x - insets[0] - insets[2],
+            display.rotatedRealSize.y - insets[1] - insets[3]).coerceAtLeast(1)
+        val newW = if (isLab) minOf(rawW, rawH, maxSquare) else rawW
+        val newH = if (isLab) newW else rawH
+        val point = if (isLab) Point(
+            LabFrameBounds.clamp(savedPosition.x, display.rotatedRealSize.x, newW, insets[0], insets[2]),
+            LabFrameBounds.clamp(savedPosition.y, display.rotatedRealSize.y, newH, insets[1], insets[3]),
+        ) else savedPosition
+        val newX = point.x
+        val newY = point.y
+        if (labMovePosition != null) labMovePosition = point
         var changed = false
 
         if (params.x != newX) {
@@ -1012,6 +1115,11 @@ open class WidgetFrameDelegate protected constructor(
     }
 
     override suspend fun onDisplayChanged() {
+        if (LabState.isEnrolledFrame(this, id)) {
+            labDrag.cancel()
+            updateWindow()
+            return
+        }
         this@WidgetFrameDelegate.display?.let { display ->
             frameSizeAndPosition.getSizeForType(saveMode, display).let { size ->
                 params.width = clampFrameWidth(display.dpToPx(size.x), display)
@@ -1028,6 +1136,10 @@ open class WidgetFrameDelegate protected constructor(
 
     override fun onViewAttached(view: View) {
         super.onViewAttached(view)
+        if (LabState.isEnrolledFrame(this, id)) {
+            LabDiagnostics.record(this, LabDiagnostics.Event.WINDOW_ATTACHED, LabState.enrolledId(this))
+            LabDiagnostics.record(this, LabDiagnostics.Event.RESTORE, LabState.enrolledId(this), x = params.x, y = params.y)
+        }
 
         rootView.post {
             onFrameAttachmentStateChanged(true)
@@ -1035,6 +1147,8 @@ open class WidgetFrameDelegate protected constructor(
     }
 
     override fun onViewDetached(view: View) {
+        if (BuildConfig.WA_LAB && id == ID) LabDiagnostics.record(this, LabDiagnostics.Event.WINDOW_REMOVED, LabState.enrolledId(this))
+        if (BuildConfig.WA_LAB && id == ID) labDrag.cancel()
         viewModel.isEditing.value = false
         viewModel.isRemoving.value = false
 
@@ -1076,6 +1190,8 @@ open class WidgetFrameDelegate protected constructor(
 
     open class WidgetFrameViewModel(delegate: WidgetFrameDelegate) :
         IWidgetFrameViewModel<State, WidgetFrameDelegate>(delegate) {
+        fun labTouch(event: android.view.MotionEvent): Boolean = delegate.labDrag.onTouch(event)
+        fun cancelLabTouch() = delegate.labDrag.cancel()
         val wallpaperInfo = MutableStateFlow<WallpaperInfo?>(null)
         val animationState = MutableStateFlow(AnimationState.STATE_IDLE)
         val acknowledgedTwoFingerTap = MutableStateFlow<Boolean?>(null)

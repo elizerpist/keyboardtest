@@ -70,6 +70,8 @@ import tk.zwander.common.listeners.WidgetResizeListener
 import tk.zwander.common.util.*
 import tk.zwander.common.util.mitigations.SafeContextWrapper
 import tk.zwander.common.views.remote.ComposeAdapterView
+import tk.zwander.lockscreenwidgets.lab.LabState
+import tk.zwander.lockscreenwidgets.util.WidgetFrameDelegate
 import tk.zwander.lockscreenwidgets.R
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.absoluteValue
@@ -266,7 +268,9 @@ fun <VM : BaseDelegate.BaseViewModel<*, *>> VM.WidgetGrid(
                     columnCount = updatedColumnCount,
                     rowCount = updatedRowCount,
                     currentEditingId = currentEditingId,
-                    modifier = if (gridLocked) {
+                    modifier = if (gridLocked || (LabState.isEnrolledFrame(context, holderId) &&
+                        (this as? WidgetFrameDelegate.WidgetFrameViewModel)?.state?.value?.isPreview == false &&
+                        data.id == LabState.enrolledId(context))) {
                         Modifier
                     } else {
                         Modifier.longPressDraggableHandle(
@@ -439,6 +443,9 @@ private fun <VM : BaseDelegate.BaseViewModel<*, *>> VM.WidgetItem(
             }
         },
         cornerRadiusKey = widgetCornerRadiusKey,
+        cornerRadiusOverride = if (LabState.isEnrolledFrame(context, holderId) &&
+            (this as? WidgetFrameDelegate.WidgetFrameViewModel)?.state?.value?.isPreview == false &&
+            data.id == LabState.enrolledId(context)) 0.dp else null,
         launchIconOverride = {
             launchShortcutIconOverride(updatedData.id)
         },

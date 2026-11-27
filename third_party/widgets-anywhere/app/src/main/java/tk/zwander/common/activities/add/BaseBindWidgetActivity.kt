@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Bundle
+import android.os.UserHandle
 import android.telephony.PhoneNumberUtils
 import android.view.Display
 import android.widget.Toast
@@ -54,39 +55,52 @@ abstract class BaseBindWidgetActivity : BaseActivity(), IConfigureActivity {
     }
 
     private var currentRequestId: Int? = null
+    private var currentRequestProvider: ComponentName? = null
+    private var currentRequestProfile: UserHandle? = null
+    protected val hasPendingWidgetRequest: Boolean get() = currentRequestId != null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (savedInstanceState?.containsKey("wa_pending_widget_id") == true) {
+            currentRequestId = savedInstanceState.getInt("wa_pending_widget_id")
+            currentRequestProvider = savedInstanceState.getString("wa_pending_widget_provider")
+                ?.let(ComponentName::unflattenFromString)
+            @Suppress("DEPRECATION")
+            currentRequestProfile = savedInstanceState.getParcelable("wa_pending_widget_profile")
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        currentRequestId?.let { outState.putInt("wa_pending_widget_id", it) }
+        currentRequestProvider?.let { outState.putString("wa_pending_widget_provider", it.flattenToString()) }
+        currentRequestProfile?.let { outState.putParcelable("wa_pending_widget_profile", it) }
+        super.onSaveInstanceState(outState)
+    }
 
     private val permRequest =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             try {
-                val id = result.data?.getIntExtra(
-                    AppWidgetManager.EXTRA_APPWIDGET_ID,
-                    currentRequestId ?: WidgetHostCompat.INVALID_WIDGET_ID,
-                ) ?: currentRequestId
-
-                if (id == null || id == WidgetHostCompat.INVALID_WIDGET_ID) {
-                    logUtils.debugLog("Unable to get widget ID.", null)
-                    return@registerForActivityResult
-                }
-
-                if (result.resultCode == RESULT_OK) {
-                    val widgetInfo = appWidgetManager.getAppWidgetInfo(id)
-
-                    if (widgetInfo == null) {
-                        logUtils.debugLog("Unable to get app widget info for ID $id", null)
-                        idManager.removeId(id)
-                    } else {
-                        //The user has granted permission for Lockscreen Widgets
-                        //so retry binding the widget
-                        logUtils.debugLog("Widget binding permission granted for $id, retrying bind", null)
-                        tryBindWidget(widgetInfo)
-                    }
-                } else {
-                    //The user didn't allow Lockscreen Widgets to bind
-                    //widgets, so delete the allocated ID
-                    idManager.removeId(id)
-                }
+                val pending = currentRequestId ?: return@registerForActivityResult
+                val returned = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pending) ?: pending
+                val info = if (result.resultCode == RESULT_OK && returned == pending) {
+                    appWidgetManager.getAppWidgetInfo(pending)
+                } else null
+                WidgetConsentResult.handle(
+                    pending, returned, result.resultCode == RESULT_OK,
+                    info != null && info.provider == currentRequestProvider &&
+                        (currentRequestProfile == null || info.profile == currentRequestProfile),
+                    object : WidgetConsentResult.Actions {
+                        override fun accept(id: Int) { onBoundWidget(info!!, id) }
+                        override fun deletePending(id: Int) {
+                            deletePendingWidgetId(id)
+                            onWidgetBindingCancelled(id)
+                        }
+                    },
+                )
             } finally {
                 currentRequestId = null
+                currentRequestProvider = null
+                currentRequestProfile = null
             }
         }
 
@@ -266,17 +280,20 @@ abstract class BaseBindWidgetActivity : BaseActivity(), IConfigureActivity {
             null,
         )
 
-        if (!canBind) getWidgetPermission(id, info.provider)
-        else {
-            //Only launch the config Activity if the widget isn't already bound (avoid reconfiguring it
-            //every time the app restarts)
-            if (info.hasConfiguration(this) && !currentIds.contains(id)) {
-                configureWidget(id, info)
-            } else {
-                addNewWidget(id, info)
-            }
+        if (!canBind) getWidgetPermission(id, info.provider, info.profile)
+        else onBoundWidget(info, id)
+    }
+
+    protected open fun onBoundWidget(info: AppWidgetProviderInfo, id: Int) {
+        if (info.hasConfiguration(this) && !currentIds.contains(id)) {
+            configureWidget(id, info)
+        } else {
+            addNewWidget(id, info)
         }
     }
+
+    protected open fun deletePendingWidgetId(id: Int) { idManager.removeId(id) }
+    protected open fun onWidgetBindingCancelled(id: Int) {}
 
     protected fun tryBindShortcut(
         info: ShortcutListInfo,
@@ -313,19 +330,26 @@ abstract class BaseBindWidgetActivity : BaseActivity(), IConfigureActivity {
      * @param id the ID of the current widget
      * @param provider the current widget's provider
      */
-    protected fun getWidgetPermission(id: Int, provider: ComponentName) {
+    protected fun getWidgetPermission(id: Int, provider: ComponentName, profile: UserHandle? = null) {
         mainHandler.postDelayed(
             {
                 try {
                     val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_BIND)
                     intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
                     intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider)
+                    profile?.let { intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE, it) }
 
                     currentRequestId = id
+                    currentRequestProvider = provider
+                    currentRequestProfile = profile
                     permRequest.launch(intent)
                 } catch (e: ActivityNotFoundException) {
                     logUtils.normalLog("Unable to launch widget permission request", e)
-                    idManager.removeId(id)
+                    currentRequestId = null
+                    currentRequestProvider = null
+                    currentRequestProfile = null
+                    deletePendingWidgetId(id)
+                    onWidgetBindingCancelled(id)
                     pendingErrors++
 
                     MaterialAlertDialogBuilder(this)

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <permission android:name="tk.zwander.lockscreenwidgets.WALLPAPER_INTERCONNECT"
+    <permission android:name="${wallpaperPermission}"
         android:protectionLevel="signature" />
 
-    <uses-permission android:name="tk.zwander.lockscreenwidgets.WALLPAPER_INTERCONNECT"
+    <uses-permission android:name="${wallpaperPermission}"
         />
 
     <application>

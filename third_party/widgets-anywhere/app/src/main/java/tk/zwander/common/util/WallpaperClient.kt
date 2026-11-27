@@ -9,13 +9,14 @@ import dev.zwander.lswinterconnect.IWallpaperAPI
 import dev.zwander.lswinterconnect.peekLogUtils
 import dev.zwander.lswinterconnect.safeApplicationContext
 import tk.zwander.lockscreenwidgets.App
+import tk.zwander.lockscreenwidgets.BuildConfig
 
 val Context.wallpaperClient: WallpaperClient
     get() = WallpaperClient.getInstance(this)
 
 class WallpaperClient private constructor(private val context: Context) {
     companion object {
-        private const val COMPANION_PKG = "dev.zwander.lswwallpaper"
+        private val COMPANION_PKG = if (BuildConfig.WA_LAB) "com.example.keyboardtest.walab.wallpaper" else "dev.zwander.lswwallpaper"
 
         @SuppressLint("StaticFieldLeak")
         private var instance: WallpaperClient? = null
@@ -37,7 +38,7 @@ class WallpaperClient private constructor(private val context: Context) {
 
     private val serviceIntent = Intent().apply {
         `package` = COMPANION_PKG
-        component = ComponentName(COMPANION_PKG, "${COMPANION_PKG}.WallpaperServerService")
+        component = ComponentName(COMPANION_PKG, "dev.zwander.lswwallpaper.WallpaperServerService")
     }
 
     private val serviceConnection = object : ServiceConnection {

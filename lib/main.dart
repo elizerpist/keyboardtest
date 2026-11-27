@@ -8,6 +8,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'performance_diagnostics.dart';
+import 'wa_lab_controller.dart';
 
 void main() {
   runApp(const KeyboardTestApp());
@@ -101,11 +102,19 @@ class KeyboardTestHome extends StatefulWidget {
 
 class _KeyboardTestHomeState extends State<KeyboardTestHome> {
   var _sheetOpen = false;
+  final _waLab = WaLabController();
 
   @override
   void initState() {
     super.initState();
     KeyboardInputWarmup.ensureScheduled();
+    _waLab.load();
+  }
+
+  @override
+  void dispose() {
+    _waLab.dispose();
+    super.dispose();
   }
 
   void _openSheet() {
@@ -134,6 +143,20 @@ class _KeyboardTestHomeState extends State<KeyboardTestHome> {
       body: Stack(
         children: [
           const _HomeSurface(),
+          if (!_sheetOpen)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 16,
+              right: 16,
+              child: ListenableBuilder(
+                listenable: _waLab,
+                builder: (context, child) => _waLab.available
+                    ? TextButton(
+                        onPressed: _waLab.open,
+                        child: const Text('Zárképernyő teszt'),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ),
           if (_sheetOpen) ...[
             Positioned.fill(
               child: GestureDetector(

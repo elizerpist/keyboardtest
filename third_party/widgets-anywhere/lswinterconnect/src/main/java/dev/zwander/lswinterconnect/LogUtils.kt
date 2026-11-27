@@ -31,6 +31,7 @@ class LogUtils private constructor(
     private val context: Context,
     private val isDebug: () -> Boolean,
     private val writeToFile: Boolean,
+    private val enabled: Boolean,
 ) : CoroutineScope by MainScope() {
     companion object {
         const val NORMAL_LOG_TAG = "LockscreenWidgets"
@@ -49,6 +50,7 @@ class LogUtils private constructor(
             context: Context,
             isDebug: () -> Boolean,
             writeToFile: Boolean,
+            enabled: Boolean = true,
         ) {
             if (instance != null) {
                 return
@@ -58,6 +60,7 @@ class LogUtils private constructor(
                 context.safeApplicationContext,
                 isDebug = isDebug,
                 writeToFile = writeToFile,
+                enabled = enabled,
             )
         }
 
@@ -66,11 +69,13 @@ class LogUtils private constructor(
             context: Context,
             isDebug: () -> Boolean,
             writeToFile: Boolean,
+            enabled: Boolean = true,
         ): LogUtils {
             return instance ?: LogUtils(
                 context.safeApplicationContext,
                 isDebug = isDebug,
                 writeToFile = writeToFile,
+                enabled = enabled,
             ).also {
                 instance = it
             }
@@ -161,6 +166,7 @@ class LogUtils private constructor(
         leaveBreadcrumb: Boolean,
         debugMessage: (() -> String)? = null,
     ) {
+        if (!enabled) return
         if (leaveBreadcrumb) {
             BugsnagUtils.leaveBreadcrumb(
                 message,
@@ -187,6 +193,7 @@ class LogUtils private constructor(
     }
 
     fun normalLog(message: String, throwable: Throwable? = DefaultException(), leaveBreadcrumb: Boolean = true, logToFile: Boolean = false, extras: Map<String, Any?> = mapOf()) {
+        if (!enabled) return
         launch(loggingDispatcher) {
             val fullMessage = generateFullMessage(message, throwable, extras)
 
@@ -217,6 +224,7 @@ class LogUtils private constructor(
      * the system's description and (truncated) trace attached.
      */
     fun logPreviousExitReasons() {
+        if (!enabled) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return
         }

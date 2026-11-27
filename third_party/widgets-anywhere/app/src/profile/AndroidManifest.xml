@@ -1,0 +1,35 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.BIND_APPWIDGET" />
+    <application android:label="keyboardtest · WA" tools:replace="android:label">
+        <meta-data android:name="com.bugsnag.android.API_KEY" tools:node="remove" />
+        <activity android:name="tk.zwander.lockscreenwidgets.MainActivity">
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service android:name="tk.zwander.lockscreenwidgets.services.Accessibility" android:label="keyboardtest · WA" />
+        <service android:name="tk.zwander.lockscreenwidgets.services.NotificationListener" android:label="keyboardtest · WA" tools:replace="android:label" />
+        <activity android:name="tk.zwander.lockscreenwidgets.lab.KeyboardLabActivity"
+            android:exported="true" android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme" android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name="tk.zwander.lockscreenwidgets.lab.LabSetupActivity" android:exported="false" />
+        <activity android:name="tk.zwander.lockscreenwidgets.lab.LabBindActivity" android:exported="false" android:launchMode="singleTask" />
+        <receiver android:name="tk.zwander.lockscreenwidgets.lab.LabWidgetProvider"
+            android:exported="true" android:label="teszt">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/lab_widget_info" />
+        </receiver>
+        <meta-data android:name="tk.zwander.lockscreenwidgets.lab.SOURCE_SHA" android:value="${labSourceSha}" />
+        <meta-data android:name="flutterEmbedding" android:value="2" />
+    </application>
+</manifest>

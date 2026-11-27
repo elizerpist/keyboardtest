@@ -23,7 +23,7 @@ class App : Application() {
             HiddenApiBypass.setHiddenApiExemptions("L")
         }
 
-        Bugsnag.start(this)
+        if (!BuildConfig.WA_LAB) Bugsnag.start(this)
 
         logUtils.debugLog("Starting wallpaper server app", null)
     }

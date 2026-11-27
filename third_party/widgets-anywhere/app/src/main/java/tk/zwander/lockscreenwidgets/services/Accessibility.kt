@@ -2,6 +2,7 @@ package tk.zwander.lockscreenwidgets.services
 
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Build
 import android.util.SparseArray
 import android.view.Display
@@ -14,6 +15,8 @@ import kotlinx.coroutines.*
 import tk.zwander.common.util.*
 import tk.zwander.common.util.AccessibilityUtils.runAccessibilityJob
 import tk.zwander.common.util.AccessibilityUtils.runWindowOperation
+import tk.zwander.lockscreenwidgets.lab.LabConnections
+import tk.zwander.lockscreenwidgets.lab.LabDiagnostics
 import tk.zwander.lockscreenwidgets.appwidget.IDListProvider
 import tk.zwander.lockscreenwidgets.appwidget.WidgetStackProvider
 import tk.zwander.lockscreenwidgets.util.FramePrefs
@@ -110,6 +113,7 @@ class Accessibility : AccessibilityService(), CoroutineScope by MainScope(), Eve
 
     override fun onServiceConnected() {
         if (alreadyConnected) {
+            LabConnections.accessibility(true)
             return
         }
 
@@ -162,6 +166,8 @@ class Accessibility : AccessibilityService(), CoroutineScope by MainScope(), Eve
         }
 
         alreadyConnected = true
+        LabConnections.accessibility(true)
+        LabDiagnostics.record(this, LabDiagnostics.Event.ACCESSIBILITY_CONNECTED)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -221,7 +227,15 @@ class Accessibility : AccessibilityService(), CoroutineScope by MainScope(), Eve
         }
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        LabConnections.accessibility(false)
+        LabDiagnostics.record(this, LabDiagnostics.Event.ACCESSIBILITY_DISCONNECTED)
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
+        LabConnections.accessibility(false)
+        LabDiagnostics.record(this, LabDiagnostics.Event.ACCESSIBILITY_DISCONNECTED)
         super.onDestroy()
 
         sharedPreferencesChangeHandler.unregister(this)

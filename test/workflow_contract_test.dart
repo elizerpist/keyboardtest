@@ -64,7 +64,21 @@ void expectProfileReleaseWorkflowContract(String yaml) {
   expect(yaml, contains(permissions));
   expect(yaml, contains(copyProfileApk));
   expect(yaml, contains(publishRelease));
-  expect(yaml, isNot(contains('actions/upload-artifact')));
+  expect(yaml, contains('actions/upload-artifact'));
+  expect(
+    yaml,
+    contains("github.ref == 'refs/heads/feat/wa-android17-lockscreen'"),
+  );
+  expect(yaml, contains(':app:assembleProfile :lswwallpaper:assembleDebug'));
+  expect(yaml, contains('flutter build aar --no-debug --profile --no-release'));
+  expect(
+    yaml,
+    contains(
+      '694b291a046b4ba1738e9df61577ec8cfddf250a7bbe9867a72ff19e161ea692',
+    ),
+  );
+  expect(yaml, contains('com.example.keyboardtest.walab'));
+  expect(yaml, contains(r'cmp "artifacts/$name" "existing/$name"'));
 
   final analyzeIndex = yaml.indexOf(analyzeStep);
   final testIndex = yaml.indexOf(testStep);

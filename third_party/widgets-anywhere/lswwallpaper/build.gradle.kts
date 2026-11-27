@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.bugsnag)
 }
 
+val waLab = providers.gradleProperty("waLab").orNull == "true"
+
 val jdkVersion = project.findProperty("jdk.version").toString()
 
 val compileSdkVersion = project.findProperty("compileSdk").toString().toInt()
@@ -21,7 +23,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "dev.zwander.lswwallpaper"
+        applicationId = if (waLab) "com.example.keyboardtest.walab.wallpaper" else "dev.zwander.lswwallpaper"
+        buildConfigField("boolean", "WA_LAB", waLab.toString())
+        manifestPlaceholders["wallpaperPermission"] = if (waLab) "com.example.keyboardtest.walab.WALLPAPER_INTERCONNECT" else "tk.zwander.lockscreenwidgets.WALLPAPER_INTERCONNECT"
         minSdk = minSdkVersion
         //noinspection ExpiredTargetSdkVersion
         targetSdk = 29

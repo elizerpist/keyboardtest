@@ -16,6 +16,12 @@ val compileSdkVersion = project.findProperty("compileSdk").toString().toInt()
 val compileSdkMinorVersion = project.findProperty("compileSdkMinor").toString().toInt()
 val targetSdkVersion = project.findProperty("targetSdk").toString().toInt()
 val minSdkVersion = project.findProperty("minSdk").toString().toInt()
+val waLab = providers.gradleProperty("waLab").orNull == "true"
+
+val labLicenses by tasks.registering(Copy::class) {
+    from(rootProject.file("LICENSE"), rootProject.file("LICENSE.md"))
+    into(layout.buildDirectory.dir("generated/labLicenses"))
+}
 
 android {
     compileSdk {
@@ -25,8 +31,13 @@ android {
     }
 
     defaultConfig {
+        buildConfigField("boolean", "WA_LAB", waLab.toString())
+        val sourceSha = providers.gradleProperty("applicationSha").orNull ?: "UNKNOWN"
+        require(sourceSha == "UNKNOWN" || sourceSha.matches(Regex("[0-9a-f]{40}")))
+        buildConfigField("String", "LAB_SOURCE_SHA", "\"$sourceSha\"")
+        manifestPlaceholders["labSourceSha"] = sourceSha
         namespace = "tk.zwander.lockscreenwidgets"
-        applicationId = "tk.zwander.lockscreenwidgets"
+        applicationId = if (waLab) "com.example.keyboardtest.walab" else "tk.zwander.lockscreenwidgets"
         minSdk = minSdkVersion
         targetSdk = targetSdkVersion
         versionCode = 222
@@ -34,6 +45,7 @@ android {
 
         manifestPlaceholders["build_uuid"] = UUID.nameUUIDFromBytes("LockscreenWidgets_${versionCode}".toByteArray()).toString()
         manifestPlaceholders["isDebug"] = false
+        manifestPlaceholders["wallpaperPermission"] = if (waLab) "com.example.keyboardtest.walab.WALLPAPER_INTERCONNECT" else "tk.zwander.lockscreenwidgets.WALLPAPER_INTERCONNECT"
 
         @Suppress("UnstableApiUsage")
         externalNativeBuild {
@@ -63,10 +75,20 @@ android {
     }
 
     buildTypes {
+        if (waLab) {
+            create("profile") {
+                initWith(getByName("debug"))
+                matchingFallbacks += listOf("debug", "release")
+                signingConfig = signingConfigs.getByName("debug")
+                manifestPlaceholders["isDebug"] = false
+            }
+        }
         all {
             buildConfigField("Integer", "DATABASE_VERSION", project.findProperty("databaseVersion").toString())
         }
     }
+
+    if (waLab) sourceSets.getByName("profile").assets.srcDir(labLicenses)
 
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(jdkVersion)
@@ -117,6 +139,9 @@ bugsnag {
 }
 
 dependencies {
+    if (waLab) {
+        add("profileImplementation", "com.example.keyboardtest_module:flutter_profile:1.0")
+    }
     implementation(fileTree("libs") { include("*.jar") })
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)

@@ -22,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import tk.zwander.common.util.*
+import tk.zwander.lockscreenwidgets.lab.LabConnections
+import tk.zwander.lockscreenwidgets.lab.LabDiagnostics
 
 //Check if the notification listener service is enabled
 val Context.isNotificationListenerActive: Boolean
@@ -51,6 +53,8 @@ class NotificationListener : NotificationListenerService(), EventObserver, Lifec
     override fun onListenerConnected() {
         logUtils.debugLog("Notification listener connected.", null)
         isListening.value = true
+        LabConnections.notifications(true)
+        LabDiagnostics.record(this, LabDiagnostics.Event.NOTIFICATION_CONNECTED)
         mainHandler.post {
             logUtils.debugLog("Sending notification update because listener was connected.", null)
             sendUpdate()
@@ -61,6 +65,8 @@ class NotificationListener : NotificationListenerService(), EventObserver, Lifec
     override fun onListenerDisconnected() {
         logUtils.debugLog("Notification listener disconnected.", null)
         isListening.value = false
+        LabConnections.notifications(false)
+        LabDiagnostics.record(this, LabDiagnostics.Event.NOTIFICATION_DISCONNECTED)
         eventManager.removeObserver(this)
         updateJob.value?.cancel()
     }
@@ -92,6 +98,8 @@ class NotificationListener : NotificationListenerService(), EventObserver, Lifec
     }
 
     override fun onDestroy() {
+        LabConnections.notifications(false)
+        LabDiagnostics.record(this, LabDiagnostics.Event.NOTIFICATION_DISCONNECTED)
         dispatcher.onServicePreSuperOnDestroy()
         eventManager.removeObserver(this)
         updateJob.value?.cancel()

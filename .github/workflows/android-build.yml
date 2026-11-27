@@ -13,6 +13,7 @@ permissions:
 jobs:
   build:
     name: Build profile APK
+    if: github.ref != 'refs/heads/feat/wa-android17-lockscreen'
     runs-on: ubuntu-latest
 
     steps:
@@ -63,3 +64,168 @@ jobs:
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/$(basename "$apk")"
           echo "### Direct profile APK" >> "$GITHUB_STEP_SUMMARY"
           echo "[Download $(basename "$apk")]($url)" >> "$GITHUB_STEP_SUMMARY"
+
+  wa-lab:
+    name: Build integrated WA lab profile APK
+    if: github.ref == 'refs/heads/feat/wa-android17-lockscreen'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.4'
+          cache: true
+      - uses: android-actions/setup-android@v3
+      - name: Flutter regression and module checks
+        run: |
+          flutter --version
+          flutter pub get
+          flutter analyze
+          flutter test
+          cd integrations/keyboardtest_module
+          flutter pub get
+          flutter analyze
+          flutter test
+          flutter build aar --no-debug --profile --no-release
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android 17 and NDK 29
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+          sdkmanager --list_installed
+      - name: Prepare isolated WA SDK
+        run: |
+          set -euxo pipefail
+          cp -al "$ANDROID_HOME" "$RUNNER_TEMP/wa-sdk"
+          jar="$RUNNER_TEMP/wa-sdk/platforms/android-37.0/android.jar"
+          rm "$jar"
+          curl --fail --location --retry 3 'https://github.com/Reginer/aosp-android-jar/raw/262f6ae931160011572a5adfe4ec6302585e8f60/android-37/android-jdk21.jar' -o "$jar"
+          test "$(wc -c < "$jar")" -eq 57746914
+          echo '694b291a046b4ba1738e9df61577ec8cfddf250a7bbe9867a72ff19e161ea692  '"$jar" | sha256sum -c -
+      - name: Build native host and companion
+        working-directory: third_party/widgets-anywhere
+        env:
+          ANDROID_HOME: ${{ runner.temp }}/wa-sdk
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/wa-sdk
+        run: |
+          bash ./gradlew --no-daemon --stacktrace :app:assembleProfile :lswwallpaper:assembleDebug :app:testProfileUnitTest -PwaLab=true -PapplicationSha="$GITHUB_SHA"
+      - name: Verify signed package and prepare release files
+        run: |
+          set -euxo pipefail
+          mapfile -t apks < <(find third_party/widgets-anywhere/app/build/outputs/apk/profile -name '*.apk' -type f)
+          test "${#apks[@]}" -eq 1
+          apk="${apks[0]}"
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" | tee signer.txt
+          "$tools/aapt" dump badging "$apk" | tee badging.txt
+          "$tools/aapt" dump xmltree "$apk" AndroidManifest.xml > manifest.txt
+          grep -F "package: name='com.example.keyboardtest.walab'" badging.txt
+          grep -F "targetSdkVersion:'37'" badging.txt
+          grep -F "$GITHUB_SHA" manifest.txt
+          grep -F 'tk.zwander.lockscreenwidgets.App' manifest.txt
+          grep -F 'tk.zwander.lockscreenwidgets.lab.KeyboardLabActivity' manifest.txt
+          grep -F 'tk.zwander.lockscreenwidgets.lab.LabWidgetProvider' manifest.txt
+          grep -F 'tk.zwander.lockscreenwidgets.services.Accessibility' manifest.txt
+          grep -F 'tk.zwander.lockscreenwidgets.services.NotificationListener' manifest.txt
+          test "$(grep -c 'android.intent.category.LAUNCHER' manifest.txt)" -eq 1
+          unzip -l "$apk" | tee contents.txt
+          grep -F 'lib/arm64-v8a/libapp.so' contents.txt
+          grep -F 'assets/flutter_assets/' contents.txt
+          grep -F 'assets/LICENSE' contents.txt
+          grep -F 'assets/LICENSE.md' contents.txt
+          mapfile -t companions < <(find third_party/widgets-anywhere/lswwallpaper/build/outputs/apk/debug -name '*.apk' -type f)
+          test "${#companions[@]}" -eq 1
+          "$tools/apksigner" verify --verbose --print-certs "${companions[0]}" > companion-signer.txt
+          diff <(grep 'Signer #1 certificate SHA-256 digest:' signer.txt) <(grep 'Signer #1 certificate SHA-256 digest:' companion-signer.txt)
+          "$tools/aapt" dump badging "${companions[0]}" | grep -F "package: name='com.example.keyboardtest.walab.wallpaper'"
+          mkdir -p artifacts
+          name="keyboardtest-wa-${GITHUB_SHA::7}-profile.apk"
+          cp "$apk" "artifacts/$name"
+          (cd artifacts && sha256sum "$name" > "$name.sha256")
+          wc -c "artifacts/$name" | tee bytes.txt
+      - name: Preserve build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: wa-lab-${{ github.sha }}
+          path: |
+            artifacts/
+            signer.txt
+            companion-signer.txt
+            badging.txt
+            manifest.txt
+            bytes.txt
+          if-no-files-found: error
+      - name: Publish immutable integrated APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          tag="keyboardtest-wa-$GITHUB_SHA"
+          name="keyboardtest-wa-${GITHUB_SHA::7}-profile.apk"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            mkdir existing
+            gh release download "$tag" --pattern "$name" --dir existing
+            cmp "artifacts/$name" "existing/$name"
+          else
+            gh release create "$tag" "artifacts/$name" "artifacts/$name.sha256" --target "$GITHUB_SHA" \
+              --title "keyboardtest WA ${GITHUB_SHA::7} profile" \
+              --notes "Integrated WA lab profile for source $GITHUB_SHA. Signed with the CI debug key; phone validation pending."
+          fi
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${name}"
+          echo "### Integrated WA APK" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Download $name]($url)" >> "$GITHUB_STEP_SUMMARY"
+          cat "artifacts/$name.sha256" >> "$GITHUB_STEP_SUMMARY"
+
+  wa-emulator:
+    name: Android 17 emulator smoke test
+    if: github.ref == 'refs/heads/feat/wa-android17-lockscreen'
+    needs: wa-lab
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wa-lab-${{ github.sha }}
+          path: wa-evidence
+      - uses: android-actions/setup-android@v3
+      - name: Check emulator availability
+        id: availability
+        run: |
+          sdkmanager --list > "$RUNNER_TEMP/android-packages.txt"
+          if [ -e /dev/kvm ] && grep -Fq 'system-images;android-37;google_apis;x86_64' "$RUNNER_TEMP/android-packages.txt"; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'API 37 google_apis x86_64 image or KVM unavailable: Android runtime fixture NOT RUN.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Enable KVM
+        if: steps.availability.outputs.available == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Launch and inspect the integrated APK on stock API 37
+        if: steps.availability.outputs.available == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 37
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash scripts/wa_emulator_smoke.sh
+      - name: Preserve emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wa-emulator-${{ github.sha }}
+          path: emulator-evidence/
+          if-no-files-found: ignore

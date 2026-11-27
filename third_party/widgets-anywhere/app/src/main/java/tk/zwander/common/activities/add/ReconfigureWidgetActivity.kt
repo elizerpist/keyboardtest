@@ -51,14 +51,12 @@ abstract class ReconfigureWidgetActivity : BaseBindWidgetActivity() {
     override fun tryBindWidget(info: AppWidgetProviderInfo, id: Int) {
         val canBind = appWidgetManager.bindAppWidgetIdIfAllowed(id, info.provider)
 
-        if (!canBind) getWidgetPermission(id, info.provider)
-        else {
-            if (info.configure != null) {
-                configureWidget(id, info)
-            } else {
-                addNewWidget(id, info)
-            }
-        }
+        if (!canBind) getWidgetPermission(id, info.provider, info.profile)
+        else onBoundWidget(info, id)
+    }
+
+    override fun onBoundWidget(info: AppWidgetProviderInfo, id: Int) {
+        if (info.configure != null) configureWidget(id, info) else addNewWidget(id, info)
     }
 
     override fun configureWidget(id: Int, provider: AppWidgetProviderInfo) {
