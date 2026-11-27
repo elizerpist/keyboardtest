@@ -165,7 +165,11 @@ jobs:
           mapfile -t companions < <(find third_party/widgets-anywhere/lswwallpaper/build/outputs/apk/debug -name '*.apk' -type f)
           test "${#companions[@]}" -eq 1
           "$tools/apksigner" verify --verbose --print-certs "${companions[0]}" > companion-signer.txt
-          diff <(grep 'Signer #1 certificate SHA-256 digest:' signer.txt) <(grep 'Signer #1 certificate SHA-256 digest:' companion-signer.txt)
+          host_signer="$(awk '/certificate SHA-256 digest:/ {print $NF}' signer.txt | sort -u)"
+          companion_signer="$(awk '/certificate SHA-256 digest:/ {print $NF}' companion-signer.txt | sort -u)"
+          [[ "$host_signer" =~ ^[0-9a-fA-F]{64}$ ]]
+          test "$host_signer" = "$companion_signer"
+          echo "Shared signing certificate SHA-256: $host_signer"
           "$tools/aapt" dump badging "${companions[0]}" | grep -F "package: name='com.example.keyboardtest.walab.wallpaper'"
           mkdir -p artifacts
           name="keyboardtest-wa-${GITHUB_SHA::7}-profile.apk"
@@ -224,6 +228,12 @@ jobs:
         id: availability
         run: |
           sdkmanager --list > "$RUNNER_TEMP/android-packages.txt"
+          if [ -e /dev/kvm ]; then echo 'KVM available'; else echo 'KVM unavailable'; fi
+          if grep -Fq 'system-images;android-37;google_apis;x86_64' "$RUNNER_TEMP/android-packages.txt"; then
+            echo 'API 37 Google APIs x86_64 image available'
+          else
+            echo 'API 37 Google APIs x86_64 image unavailable'
+          fi
           if [ -e /dev/kvm ] && grep -Fq 'system-images;android-37;google_apis;x86_64' "$RUNNER_TEMP/android-packages.txt"; then
             echo 'available=true' >> "$GITHUB_OUTPUT"
           else

@@ -78,6 +78,9 @@ void expectProfileReleaseWorkflowContract(String yaml) {
     ),
   );
   expect(yaml, contains('com.example.keyboardtest.walab'));
+  expect(yaml, contains(r'test "$host_signer" = "$companion_signer"'));
+  expect(yaml, contains(r'[[ "$host_signer" =~ ^[0-9a-fA-F]{64}$ ]]'));
+
   expect(yaml, contains(r'cmp "artifacts/$name" "existing/$name"'));
 
   final analyzeIndex = yaml.indexOf(analyzeStep);
