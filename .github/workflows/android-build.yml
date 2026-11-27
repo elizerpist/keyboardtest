@@ -107,7 +107,11 @@ jobs:
       - name: Prepare isolated WA SDK
         run: |
           set -euxo pipefail
-          cp -al "$ANDROID_HOME" "$RUNNER_TEMP/wa-sdk"
+          mkdir -p "$RUNNER_TEMP/wa-sdk/platforms"
+          cp -a "$ANDROID_HOME/platforms/android-37.0" "$RUNNER_TEMP/wa-sdk/platforms/"
+          for part in build-tools ndk cmake platform-tools licenses cmdline-tools extras; do
+            if [ -e "$ANDROID_HOME/$part" ]; then ln -s "$ANDROID_HOME/$part" "$RUNNER_TEMP/wa-sdk/$part"; fi
+          done
           jar="$RUNNER_TEMP/wa-sdk/platforms/android-37.0/android.jar"
           rm "$jar"
           curl --fail --location --retry 3 'https://github.com/Reginer/aosp-android-jar/raw/262f6ae931160011572a5adfe4ec6302585e8f60/android-37/android-jdk21.jar' -o "$jar"

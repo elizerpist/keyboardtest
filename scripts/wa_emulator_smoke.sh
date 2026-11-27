@@ -18,4 +18,5 @@ if grep -E 'Error:|Exception|Status: error' emulator-evidence/launch.txt; then e
 adb shell dumpsys activity activities > emulator-evidence/activities.txt
 grep -F 'tk.zwander.lockscreenwidgets.lab.KeyboardLabActivity' emulator-evidence/activities.txt
 adb exec-out screencap -p > emulator-evidence/keyboard.png
-adb logcat -d -v threadtime > emulator-evidence/logcat.txt
+python3 scripts/wa_emulator_ui.py
+adb exec-out screencap -p > emulator-evidence/lab-setup.png

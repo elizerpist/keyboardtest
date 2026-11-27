@@ -136,39 +136,41 @@ fun WidgetFrameDelegate.WidgetFrameViewModel.WidgetFrameLayout(
     Card(
         modifier = modifier
             .then(labInput)
-            .pointerInput(Unit) {
-                interceptOutOfBoundsChildEvents = true
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                        val interestingChanges = event.changes.filter { it.pressed }
+            .pointerInput(liveLab) {
+                if (!liveLab) {
+                    interceptOutOfBoundsChildEvents = true
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                            val interestingChanges = event.changes.filter { it.pressed }
 
-                        if (interestingChanges.size >= 2 && !isAdjustingMask) {
-                            event.changes.forEach { it.consume() }
-                            val thirdFinger = withTimeoutOrNull(50L) {
-                                awaitPointerEvent(pass = PointerEventPass.Initial)
-                            }
-                            val interestingThirdChanges = thirdFinger?.changes?.filter {
-                                it.pressed
-                            }.orEmpty()
-
-                            if (interestingThirdChanges.size < 3) {
-                                isInEditingMode = !isInEditingMode && (!frameLocked || state.value.isPreview)
-                                if (acknowledgedTwoFingerTap == null) {
-                                    acknowledgedTwoFingerTap = false
-                                } else if (acknowledgedTwoFingerTap == false) {
-                                    acknowledgedTwoFingerTap = true
+                            if (interestingChanges.size >= 2 && !isAdjustingMask) {
+                                event.changes.forEach { it.consume() }
+                                val thirdFinger = withTimeoutOrNull(50L) {
+                                    awaitPointerEvent(pass = PointerEventPass.Initial)
                                 }
-                            } else {
-                                if (firstViewing) {
-                                    acknowledgedThreeFingerTap = true
+                                val interestingThirdChanges = thirdFinger?.changes?.filter {
+                                    it.pressed
+                                }.orEmpty()
+
+                                if (interestingThirdChanges.size < 3) {
+                                    isInEditingMode = !isInEditingMode && (!frameLocked || state.value.isPreview)
+                                    if (acknowledgedTwoFingerTap == null) {
+                                        acknowledgedTwoFingerTap = false
+                                    } else if (acknowledgedTwoFingerTap == false) {
+                                        acknowledgedTwoFingerTap = true
+                                    }
                                 } else {
-                                    tempHide()
+                                    if (firstViewing) {
+                                        acknowledgedThreeFingerTap = true
+                                    } else {
+                                        tempHide()
+                                    }
                                 }
-                            }
 
-                            thirdFinger?.changes?.forEach { it.consume() }
-                            waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                                thirdFinger?.changes?.forEach { it.consume() }
+                                waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                            }
                         }
                     }
                 }
@@ -176,8 +178,9 @@ fun WidgetFrameDelegate.WidgetFrameViewModel.WidgetFrameLayout(
             .pointerInput(
                 doubleTapTurnOffDisplay,
                 firstViewing,
+                liveLab,
             ) {
-                if (doubleTapTurnOffDisplay && !firstViewing) {
+                if (doubleTapTurnOffDisplay && !firstViewing && !liveLab) {
                     detectTapGestures(
                         onDoubleTap = {
                             context.logUtils.debugLog(

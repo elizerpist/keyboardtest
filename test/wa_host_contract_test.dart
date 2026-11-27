@@ -40,6 +40,24 @@ void main() {
     expect(gradle, contains('com.example.keyboardtest.walab'));
     expect(gradle, contains('flutter_profile'));
   });
+  test(
+    'live lab pointer stream bypasses WA multi-finger and double-tap actions',
+    () {
+      final frame = File(
+        'third_party/widgets-anywhere/app/src/main/java/tk/zwander/lockscreenwidgets/compose/WidgetFrameLayout.kt',
+      ).readAsStringSync();
+      expect(frame, contains('.pointerInput(liveLab)'));
+      expect(frame, contains('if (!liveLab) {'));
+      expect(
+        frame,
+        contains('doubleTapTurnOffDisplay && !firstViewing && !liveLab'),
+      );
+      final delegate = File(
+        'third_party/widgets-anywhere/app/src/main/java/tk/zwander/lockscreenwidgets/util/WidgetFrameDelegate.kt',
+      ).readAsStringSync();
+      expect(delegate, contains('!isPreview && !isDefaultDisplay'));
+    },
+  );
   test('lab companion uses a separate package and signature permission', () {
     final library = File(
       'third_party/widgets-anywhere/lswinterconnect/src/main/AndroidManifest.xml',

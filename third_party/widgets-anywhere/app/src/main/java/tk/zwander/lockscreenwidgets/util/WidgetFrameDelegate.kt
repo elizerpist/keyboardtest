@@ -841,6 +841,10 @@ open class WidgetFrameDelegate protected constructor(
         val showingKeyboard = globalState.showingKeyboard.value[displayId] == true
         val wasOnKeyguard = globalState.wasOnKeyguard.value
         val isDefaultDisplay = displayId == Display.DEFAULT_DISPLAY
+        if (LabState.isEnrolledFrame(context, id) && !isPreview && !isDefaultDisplay) {
+            recordLabVisibility(0)
+            return false
+        }
         val notificationsPanelFullyExpanded = globalState.notificationsPanelFullyExpanded.value[displayId] == true
         val showInNotificationShade = framePrefs.showInNotificationShade
         val showOnMainLockScreen = framePrefs.showOnMainLockScreen
