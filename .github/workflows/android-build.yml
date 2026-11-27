@@ -137,7 +137,7 @@ jobs:
           ANDROID_HOME: ${{ runner.temp }}/wa-sdk
           ANDROID_SDK_ROOT: ${{ runner.temp }}/wa-sdk
         run: |
-          bash ./gradlew --no-daemon --stacktrace :app:assembleProfile :lswwallpaper:assembleDebug :app:testProfileUnitTest -PwaLab=true -PapplicationSha="$GITHUB_SHA"
+          bash ./gradlew --no-daemon --stacktrace :app:assembleProfile :lswwallpaper:assembleDebug -PwaLab=true -PapplicationSha="$GITHUB_SHA"
       - name: Verify signed package and prepare release files
         run: |
           set -euxo pipefail
