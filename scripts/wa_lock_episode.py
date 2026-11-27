@@ -23,6 +23,10 @@ def screen_asleep(dump):
             and 'mWakefulnessChanging=false' in dump)
 
 
+def keyguard_shown(dump):
+    return re.search(r'KeyguardServiceDelegate\s+showing=true\b', dump) is not None
+
+
 def service_connected(dump):
     enabled = re.search(r'Enabled services:[^\n]*' + re.escape(SERVICE), dump, re.I)
     bound = re.search(r'Bound services:[^\n]*Service\[label=keyboardtest · WA,', dump, re.I)
@@ -46,6 +50,8 @@ def lock_episode(adb, wait_node, tap, widget_id):
 
     failure = None
     try:
+        adb('shell', 'locksettings', 'set-disabled', 'false')
+        (EVIDENCE / 'locksettings.txt').write_text(adb('shell', 'locksettings', 'get-disabled'))
         adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
         (EVIDENCE / 'before-lock-activities.txt').write_text(adb('shell', 'dumpsys', 'activity', 'activities'))
         adb('shell', 'input', 'keyevent', 'KEYCODE_SLEEP')
@@ -60,6 +66,15 @@ def lock_episode(adb, wait_node, tap, widget_id):
             raise AssertionError('Emulator did not finish going to sleep')
         (EVIDENCE / 'sleep-policy.txt').write_text(adb('shell', 'dumpsys', 'window', 'policy'))
         adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP')
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            policy = adb('shell', 'dumpsys', 'window', 'policy')
+            (EVIDENCE / 'keyguard-policy.txt').write_text(policy)
+            if keyguard_shown(policy):
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError('Emulator keyguard did not become visible after wake')
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             windows = adb('shell', 'dumpsys', 'window', 'windows')
@@ -89,8 +104,16 @@ def lock_episode(adb, wait_node, tap, widget_id):
         adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/tk.zwander.lockscreenwidgets.lab.KeyboardLabActivity', check=False)
         tap(wait_node('Zárképernyő teszt'))
         tap(wait_node('Leállítás és másolás'))
-        prefs = adb('shell', 'run-as', PACKAGE, 'cat', 'shared_prefs/wa_lab_diagnostics.xml')
+        deadline = time.monotonic() + 10
+        prefs = ''
+        while time.monotonic() < deadline:
+            prefs = adb('shell', 'run-as', PACKAGE, 'cat', 'shared_prefs/wa_lab_diagnostics.xml', check=False)
+            if '<map>' in prefs and 'name="body"' in prefs:
+                break
+            time.sleep(0.5)
         (EVIDENCE / 'diagnostics.xml').write_text(prefs)
+        if not prefs:
+            raise AssertionError('Frozen diagnostic file was not created')
     if failure is not None:
         raise failure
     root = ET.fromstring(prefs)

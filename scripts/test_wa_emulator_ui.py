@@ -1,13 +1,17 @@
 import unittest
 import xml.etree.ElementTree as ET
 from wa_emulator_ui import find_node
-from wa_lock_episode import SERVICE, matching_overlay, screen_asleep, service_connected
+from wa_lock_episode import SERVICE, keyguard_shown, matching_overlay, screen_asleep, service_connected
 
 
 class EmulatorUiLookupTest(unittest.TestCase):
     def test_dialog_buttons_are_selected_by_system_id(self):
         root = ET.fromstring('<hierarchy><node text="Always allow" resource-id="android:id/alwaysUse" /><node text="Create" resource-id="android:id/button1" /></hierarchy>')
         self.assertEqual(find_node(root, ('android:id/button1',)).get('text'), 'Create')
+
+    def test_requires_system_keyguard_to_be_showing(self):
+        self.assertTrue(keyguard_shown('KeyguardServiceDelegate\n  showing=true\n  enabled=true'))
+        self.assertFalse(keyguard_shown('KeyguardServiceDelegate\n  showing=false\n  enabled=true'))
 
     def test_waits_for_sleep_transition_to_finish(self):
         self.assertFalse(screen_asleep('mWakefulness=Dozing\nmWakefulnessChanging=true'))
