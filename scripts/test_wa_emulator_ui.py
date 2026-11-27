@@ -26,8 +26,9 @@ class EmulatorUiLookupTest(unittest.TestCase):
         self.assertFalse(service_connected(dump.replace('keyboardtest · WA', 'Other app')))
 
     def test_overlay_requires_wa_package_and_accessibility_type(self):
-        self.assertTrue(matching_overlay('  Window #0 Window{abc}:\n  package=com.example.keyboardtest.walab ty=ACCESSIBILITY_OVERLAY'))
-        self.assertFalse(matching_overlay('  Window #0 Window{abc}:\n  package=com.other ty=ACCESSIBILITY_OVERLAY'))
+        self.assertTrue(matching_overlay('  Window #0 Window{abc}:\n  package=com.example.keyboardtest.walab ty=ACCESSIBILITY_OVERLAY mHasSurface=true mDrawState=HAS_DRAWN isVisible=true'))
+        self.assertFalse(matching_overlay('  Window #0 Window{abc}:\n  package=com.example.keyboardtest.walab ty=ACCESSIBILITY_OVERLAY mHasSurface=false mDrawState=NO_SURFACE isVisible=false'))
+        self.assertFalse(matching_overlay('  Window #0 Window{abc}:\n  package=com.other ty=ACCESSIBILITY_OVERLAY mHasSurface=true mDrawState=HAS_DRAWN isVisible=true'))
         self.assertFalse(matching_overlay('  Window #0 Window{abc}:\n  package=com.example.keyboardtest.walab ty=APPLICATION'))
 
     def test_native_button_labels_are_case_insensitive(self):

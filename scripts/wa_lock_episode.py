@@ -15,7 +15,8 @@ EVIDENCE = Path('emulator-evidence')
 def matching_overlay(dump):
     blocks = re.split(r'(?m)(?=^\s*Window #\d+\s)', dump)
     return any(PACKAGE in block and re.search(r'\bty=(?:ACCESSIBILITY_OVERLAY|2032)\b', block)
-               for block in blocks)
+               and 'mHasSurface=true' in block and 'mDrawState=HAS_DRAWN' in block
+               and 'isVisible=true' in block for block in blocks)
 
 
 def screen_asleep(dump):
