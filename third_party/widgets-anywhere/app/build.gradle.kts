@@ -88,7 +88,7 @@ android {
         }
     }
 
-    if (waLab) sourceSets.getByName("profile").assets.srcDir(labLicenses)
+    if (waLab) sourceSets.getByName("profile").assets.srcDir(layout.buildDirectory.dir("generated/labLicenses").get().asFile)
 
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(jdkVersion)
@@ -116,6 +116,8 @@ android {
         includeInBundle = false
     }
 }
+
+if (waLab) tasks.matching { it.name == "preProfileBuild" }.configureEach { dependsOn(labLicenses) }
 
 afterEvaluate {
     base {

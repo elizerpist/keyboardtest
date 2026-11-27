@@ -83,6 +83,12 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+      - name: Restore Flutter profile AAR
+        id: flutter-aar
+        uses: actions/cache/restore@v4
+        with:
+          path: integrations/keyboardtest_module/build/host/outputs/repo
+          key: wa-flutter-aar-3.41.4-${{ runner.os }}-${{ hashFiles('pubspec.yaml', 'pubspec.lock', 'lib/**', 'integrations/keyboardtest_module/lib/**', 'integrations/keyboardtest_module/pubspec.yaml', 'integrations/keyboardtest_module/pubspec.lock') }}
       - name: Flutter regression and module checks
         run: |
           flutter --version
@@ -94,7 +100,15 @@ jobs:
           flutter pub get
           flutter analyze
           flutter test
-          flutter build aar --no-debug --profile --no-release
+          if [ '${{ steps.flutter-aar.outputs.cache-hit }}' != 'true' ]; then
+            flutter build aar --no-debug --profile --no-release
+          fi
+      - name: Save Flutter profile AAR
+        if: steps.flutter-aar.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: integrations/keyboardtest_module/build/host/outputs/repo
+          key: ${{ steps.flutter-aar.outputs.cache-primary-key }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
