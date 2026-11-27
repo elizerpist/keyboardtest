@@ -81,6 +81,8 @@ jobs:
           flutter-version: '3.41.4'
           cache: true
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Flutter regression and module checks
         run: |
           flutter --version
@@ -197,6 +199,8 @@ jobs:
           name: wa-lab-${{ github.sha }}
           path: wa-evidence
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Check emulator availability
         id: availability
         run: |
