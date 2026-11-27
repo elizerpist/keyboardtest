@@ -78,6 +78,8 @@ void expectProfileReleaseWorkflowContract(String yaml) {
     ),
   );
   expect(yaml, contains('com.example.keyboardtest.walab'));
+  expect(yaml, contains('system-images;android-37.0;google_apis;x86_64'));
+  expect(yaml, contains("api-level: '37.0'"));
   expect(yaml, contains(r'test "$host_signer" = "$companion_signer"'));
   expect(yaml, contains(r'[[ "$host_signer" =~ ^[0-9a-fA-F]{64}$ ]]'));
 

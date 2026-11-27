@@ -229,12 +229,12 @@ jobs:
         run: |
           sdkmanager --list > "$RUNNER_TEMP/android-packages.txt"
           if [ -e /dev/kvm ]; then echo 'KVM available'; else echo 'KVM unavailable'; fi
-          if grep -Fq 'system-images;android-37;google_apis;x86_64' "$RUNNER_TEMP/android-packages.txt"; then
+          if grep -Fq 'system-images;android-37.0;google_apis;x86_64' "$RUNNER_TEMP/android-packages.txt"; then
             echo 'API 37 Google APIs x86_64 image available'
           else
             echo 'API 37 Google APIs x86_64 image unavailable'
           fi
-          if [ -e /dev/kvm ] && grep -Fq 'system-images;android-37;google_apis;x86_64' "$RUNNER_TEMP/android-packages.txt"; then
+          if [ -e /dev/kvm ] && grep -Fq 'system-images;android-37.0;google_apis;x86_64' "$RUNNER_TEMP/android-packages.txt"; then
             echo 'available=true' >> "$GITHUB_OUTPUT"
           else
             echo 'available=false' >> "$GITHUB_OUTPUT"
@@ -250,7 +250,7 @@ jobs:
         if: steps.availability.outputs.available == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 37
+          api-level: '37.0'
           target: google_apis
           arch: x86_64
           disable-animations: true
