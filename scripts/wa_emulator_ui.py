@@ -72,6 +72,8 @@ def main():
         tap(wait_node('Tesztwidget hozzáadása'))
         wait_node(f'Kötött widget ID: {widget_id}')
         (EVIDENCE / 'consent.txt').write_text(f'Android dialog denied, retried, accepted; repeated add retained ID {widget_id}.\n')
+        from wa_lock_episode import lock_episode
+        lock_episode(adb, wait_node, tap, widget_id)
     finally:
         (EVIDENCE / 'logcat.txt').write_text(adb('logcat', '-d', '-v', 'threadtime', check=False))
 

@@ -1,12 +1,18 @@
 import unittest
 import xml.etree.ElementTree as ET
 from wa_emulator_ui import find_node
+from wa_lock_episode import matching_overlay
 
 
 class EmulatorUiLookupTest(unittest.TestCase):
     def test_dialog_buttons_are_selected_by_system_id(self):
         root = ET.fromstring('<hierarchy><node text="Always allow" resource-id="android:id/alwaysUse" /><node text="Create" resource-id="android:id/button1" /></hierarchy>')
         self.assertEqual(find_node(root, ('android:id/button1',)).get('text'), 'Create')
+
+    def test_overlay_requires_wa_package_and_accessibility_type(self):
+        self.assertTrue(matching_overlay('  Window #0 Window{abc}:\n  package=com.example.keyboardtest.walab ty=ACCESSIBILITY_OVERLAY'))
+        self.assertFalse(matching_overlay('  Window #0 Window{abc}:\n  package=com.other ty=ACCESSIBILITY_OVERLAY'))
+        self.assertFalse(matching_overlay('  Window #0 Window{abc}:\n  package=com.example.keyboardtest.walab ty=APPLICATION'))
 
     def test_native_button_labels_are_case_insensitive(self):
         root = ET.fromstring('<hierarchy><node text="TESZTWIDGET HOZZÁADÁSA" /></hierarchy>')
